@@ -1,4 +1,44 @@
-import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } from 'react';
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hub a Nice Day</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-presets="react">
+const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
+
+
+// Lucide icon shims (SVG)
+const iconStyle = (size=16) => ({width:size,height:size,display:'inline-block',verticalAlign:'middle'});
+const Calendar = ({size=16,color='currentColor',...p}) => <svg {...p} style={iconStyle(size)} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>;
+const Car = ({size=16,color='currentColor',...p}) => <svg {...p} style={iconStyle(size)} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><path d="M5 17H3a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1l2-4h10l2 4h1a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-2"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="17.5" r="2.5"/></svg>;
+const Clock = ({size=16,color='currentColor',...p}) => <svg {...p} style={iconStyle(size)} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
+const ChevronLeft = ({size=16,color='currentColor',...p}) => <svg {...p} style={iconStyle(size)} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>;
+const ChevronRight = ({size=16,color='currentColor',...p}) => <svg {...p} style={iconStyle(size)} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>;
+const ChevronsLeft = ({size=16,color='currentColor',...p}) => <svg {...p} style={iconStyle(size)} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>;
+const ChevronsRight = ({size=16,color='currentColor',...p}) => <svg {...p} style={iconStyle(size)} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>;
+const ChevronUp = ({size=16,color='currentColor',...p}) => <svg {...p} style={iconStyle(size)} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><polyline points="18 15 12 9 6 15"/></svg>;
+const X = ({size=16,color='currentColor',...p}) => <svg {...p} style={iconStyle(size)} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
+const Settings = ({size=16,color='currentColor',...p}) => <svg {...p} style={iconStyle(size)} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>;
+const LogOut = ({size=16,color='currentColor',...p}) => <svg {...p} style={iconStyle(size)} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>;
+const Lock = ({size=16,color='currentColor',...p}) => <svg {...p} style={iconStyle(size)} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
+const Search = ({size=16,color='currentColor',...p}) => <svg {...p} style={iconStyle(size)} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>;
+const ZoomIn = ({size=16,color='currentColor',...p}) => <svg {...p} style={iconStyle(size)} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>;
+const ZoomOut = ({size=16,color='currentColor',...p}) => <svg {...p} style={iconStyle(size)} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>;
+const Eye = ({size=16,color='currentColor',...p}) => <svg {...p} style={iconStyle(size)} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>;
+const PlusSquare = ({size=16,color='currentColor',...p}) => <svg {...p} style={iconStyle(size)} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>;
+const MinusSquare = ({size=16,color='currentColor',...p}) => <svg {...p} style={iconStyle(size)} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="8" y1="12" x2="16" y2="12"/></svg>;
+
 import { Calendar, Car, Clock, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronUp,
          X, Settings, LogOut, Lock, Search, ZoomIn, ZoomOut,
          Eye, PlusSquare, MinusSquare } from 'lucide-react';
@@ -263,9 +303,9 @@ const storKey = (base, storeId) => `${STOR}${storeId}-${base}`;
 //  GAS接続設定
 //  STEP 5: 下記URLをGASデプロイ後のウェブアプリURLに書き換える
 // ═══════════════════════════════════════════════════════════
-const GAS_URL = 'https://script.google.com/macros/s/ここにGASのURL/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxyWvIxIyC1EwJUfm4Fy8g6dpBytp7J9wTuT6Dujz-X7V-WzkGkN-bHw2l6rY_B1ST3/exec';
 
-const GAS_READY = GAS_URL !== 'https://script.google.com/macros/s/ここにGASのURL/exec';
+const GAS_READY = GAS_URL !== 'YOUR_GAS_URL_HERE' && GAS_URL !== '';
 
 // GASからデータを読み込む
 const sGet = async(k) => {
@@ -282,8 +322,10 @@ const sGet = async(k) => {
 const sSet = async(k, v) => {
   if (!GAS_READY) return;
   try {
+    // no-cors: GASのリダイレクト問題を回避。レスポンスは読めないが書き込みは成功する
     await fetch(GAS_URL, {
       method: 'POST',
+      mode: 'no-cors',
       headers: {'Content-Type': 'text/plain;charset=utf-8'},
       body: JSON.stringify({key: k, value: JSON.stringify(v)}),
     });
@@ -4806,7 +4848,7 @@ function AppInner() {
   );
 }
 
-export default function App(){return <ErrorBoundary><AppInner/></ErrorBoundary>;}
+function App(){return <ErrorBoundary><AppInner/></ErrorBoundary>;}
 
 // ─ スタイル定数 ─
 const NAV_S    ={background:'#4338ca',color:'white',border:'none',borderRadius:7,padding:7,cursor:'pointer',display:'flex',alignItems:'center'};
@@ -4817,3 +4859,10 @@ const LBL      ={display:'block',fontSize:13,fontWeight:700,color:'#374151',marg
 const INP      ={width:'100%',padding:'9px 12px',border:'2px solid #e5e7eb',borderRadius:8,fontSize:14,outline:'none',transition:'border .15s',boxSizing:'border-box'};
 const SEC_TITLE=(color)=>({fontSize:15,fontWeight:800,marginBottom:0,paddingBottom:5,borderBottom:`3px solid ${color}`,color:'#1e1b4b',margin:0});
 const JUMP_BTN =(color)=>({display:'flex',alignItems:'center',gap:3,padding:'5px 10px',borderRadius:6,border:`2px solid ${color}`,background:'white',color,fontWeight:700,fontSize:12,cursor:'pointer'});
+
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+  </script>
+</body>
+</html>
