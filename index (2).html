@@ -14,26 +14,12 @@
     /* ===== モバイル専用スタイル ===== */
     @media screen and (max-width: 768px) {
       body { overflow-x: hidden; }
-      /* 縦画面固定 */
-      @media (orientation: landscape) {
-        body::before {
-          content: '📱 縦向きでご利用ください';
-          position: fixed; inset: 0; z-index: 99999;
-          background: #1e1b4b; color: white;
-          display: flex; align-items: center; justify-content: center;
-          font-size: 18px; font-weight: bold;
-        }
-      }
-      /* ボトムナビ分の余白 */
-      main { padding-bottom: 70px !important; }
-      /* ヘッダー非表示（モバイルは専用ナビを使う） */
-      .desktop-header { display: none !important; }
-      /* テーブルスクロール対応 */
+      header.desktop-header { display: none !important; }
       table { font-size: 12px !important; }
       td, th { padding: 5px 6px !important; }
+      input, select { font-size: 16px !important; }
     }
     @media screen and (min-width: 769px) {
-      .mobile-bottom-nav { display: none !important; }
       .mobile-top-nav { display: none !important; }
     }
 </style>
