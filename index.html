@@ -6435,7 +6435,7 @@ function AppInner() {
       <style>{GCSS}</style>
 
       {/* -- ヘッダー -- */}
-      <header ref={headerRef} style={{background:'rgba(255,255,255,0.97)',borderBottom:`3px solid ${vsStore.color}`,padding:'9px 18px',position:'sticky',top:0,zIndex:500,boxShadow:'0 4px 20px rgba(0,0,0,0.15)'}}>
+      <header ref={headerRef} style={{background:'rgba(255,255,255,0.97)',borderBottom:`3px solid ${vsStore.color}`,padding:'9px 18px',position:'fixed',top:0,left:0,right:0,zIndex:500,boxShadow:'0 4px 20px rgba(0,0,0,0.15)'}}>
         {(()=>{
           const userStore=STORES.find(s=>s.id===(currentUser?.store?.id||'honten'))||STORES[0];
           return(
@@ -6537,8 +6537,8 @@ function AppInner() {
         {exportStatus==='err'&&(<div style={{position:'fixed',top:70,right:20,zIndex:9999,background:'#dc2626',color:'white',borderRadius:10,padding:'12px 18px',fontSize:13,fontWeight:700,boxShadow:'0 4px 20px rgba(0,0,0,0.25)'}}>✕ コピーに失敗しました<br/><span style={{fontWeight:400,fontSize:11,opacity:0.9}}>ブラウザのクリップボード権限を確認してください</span></div>)}
       </header>
 
-      <main style={{maxWidth:1700,margin:'0 auto',padding:'20px 16px',
-        ...(view==='schedule'?{height:'calc(100vh - var(--header-h,90px))',overflow:'hidden',padding:'0',display:'flex',flexDirection:'column'}:{})}}>
+      <main style={{maxWidth:1700,margin:'0 auto',padding:'20px 16px',paddingTop:'calc(var(--header-h,90px) + 20px)',
+        ...(view==='schedule'?{height:'calc(100vh - var(--header-h,90px))',overflow:'hidden',padding:'0',paddingTop:'var(--header-h,90px)',display:'flex',flexDirection:'column'}:{})}}>
 
         {/* -- カレンダー -- */}
         {view==='calendar'&&(()=>{
