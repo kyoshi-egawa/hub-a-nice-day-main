@@ -7101,16 +7101,18 @@ function AppInner() {
                         const allMapped=allRows.map((r,i)=>({...(r&&r.name?r:blankInsp()),_origIdx:i}));
                         // 台数制限取得（設定なければ6）
                         const dayInspLimit=inspLimits[dk]??6;
-                        // キャンセル除外・名前あり行
-                        const validRows=allMapped.filter(r=>!!(r.name)&&r.bookingStatus!=='cancelled');
+                        // キャンセル除外・名前あり行をidx順（入力順）で並べる
+                        const validRows=allMapped
+                          .filter(r=>!!(r.name)&&r.bookingStatus!=='cancelled')
+                          .sort((a,b)=>a._origIdx-b._origIdx);
 
-                        // 上段6台：ログイン店舗優先・時刻順（sortFn）で選出
-                        const normalRows=validRows.slice().sort(sortFn).slice(0,dayInspLimit);
-                        const normalIdxSet=new Set(normalRows.map(r=>r._origIdx));
+                        // 上段6台：入力順で先着dayInspLimit台を確定（店舗・承認状態に関わらず）
+                        // ただし表示順はログイン店舗優先・時刻順（sortFn）で並べる
+                        const normalRows=validRows.slice(0,dayInspLimit).slice().sort(sortFn);
 
-                        // 下段7台目以降：上段に入らなかった行を時刻順（店舗関係なし）
+                        // 下段7台目以降：入力順で7台目以降を時刻順で並べる
                         const waitingRows=validRows
-                          .filter(r=>!normalIdxSet.has(r._origIdx))
+                          .slice(dayInspLimit)
                           .sort((a,b)=>timeToMin(a.time)-timeToMin(b.time));
 
                         // 追加行のインデックス
