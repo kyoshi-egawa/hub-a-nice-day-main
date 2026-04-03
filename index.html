@@ -2019,9 +2019,15 @@ const StaffSettingsModal=memo(({isOpen,onClose,staffListH,staffListS,onUpdate,on
 // ============================================
 //  ログイン
 // ============================================
-const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopListH,desktopListS})=>{
+const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopListH,desktopListS,initialDesktop})=>{
   const [sel,setSel]=useState(null);
-  const [deskSel,setDeskSel]=useState(null);
+  // タイムアウト後（initialDesktopあり）はすぐスタッフ選択画面を表示
+  const [deskSel,setDeskSel]=useState(()=>{
+    if(!initialDesktop) return null;
+    // desktopListから一致するものを探す
+    const all=[...(desktopListH||[]).map(d=>({...d,store:'honten'})),...(desktopListS||[]).map(d=>({...d,store:'sanda'}))];
+    return all.find(d=>d.name===initialDesktop.name&&d.store===initialDesktop.store)||{name:initialDesktop.name,store:initialDesktop.store,uid:'_idle'};
+  });
 
   const StorePanel=({store,staffList})=>{
     const isSelected=store.id===sel?.store?.id;
@@ -3666,7 +3672,8 @@ const InspRow=memo(({row,idx,dispNo,dk,onOpenModal,lockInfo,loanerRes,vsId,onApp
   const pending=row.pendingApproval;
   const approved=row.approved;
   const canApprove=pending&&vsId==='honten';
-  const blocked=isOverLimit||locked||otherStore;
+  // 承認待ち行は本店ユーザーが承認・編集できる必要があるため otherStore でブロックしない
+  const blocked=(!isEmpty&&isOverLimit)||locked||(otherStore&&!canApprove);
   const isCancelled=row.bookingStatus==='cancelled';
 
   const noteQItems=setItems||[];
@@ -5184,17 +5191,55 @@ function AppInner() {
   // ★修正4: sessionStorageでログイン状態を保持（リロード後も維持）
   const [currentUser,setCurrentUser]=useState(()=>{
     try{
-      const saved=localStorage.getItem('hub_currentUser');
+      // sessionStorage：ブラウザ（タブ）を閉じたらログアウト
+      const saved=sessionStorage.getItem('hub_currentUser');
       return saved?JSON.parse(saved):null;
     }catch{return null;}
   });
   const setCurrentUserPersist=useCallback((user)=>{
     setCurrentUser(user);
     try{
-      if(user) localStorage.setItem('hub_currentUser',JSON.stringify(user));
-      else localStorage.removeItem('hub_currentUser');
+      if(user) sessionStorage.setItem('hub_currentUser',JSON.stringify(user));
+      else sessionStorage.removeItem('hub_currentUser');
     }catch{}
   },[]);
+
+  // ── 共有PC：10分無操作でスタッフ選択画面に戻る ──
+  const _idleTimer = useRef(null);
+  const _idleDesktop = useRef(null); // タイムアウト時に戻る共有PC情報
+
+  const resetIdleTimer = useCallback(() => {
+    if(!_idleDesktop.current) return;
+    clearTimeout(_idleTimer.current);
+    _idleTimer.current = setTimeout(() => {
+      // スタッフのみログアウト（共有PC情報は保持）
+      setCurrentUser(null);
+      try{ sessionStorage.removeItem('hub_currentUser'); }catch{}
+    }, 10 * 60 * 1000); // 10分
+  }, []);
+
+  // 共有PCログイン時にタイマー開始、個人PCはタイマー不要
+  useEffect(() => {
+    if(currentUser?.desktopName) {
+      // 共有PCログイン：デスクトップ情報を記憶してタイマー開始
+      _idleDesktop.current = {
+        name: currentUser.desktopName,
+        store: currentUser.store?.id || currentUser.store,
+      };
+      // 操作イベントでタイマーリセット
+      const events = ['mousedown','mousemove','keydown','touchstart','scroll','click'];
+      events.forEach(e => window.addEventListener(e, resetIdleTimer, {passive:true}));
+      resetIdleTimer();
+      return () => {
+        events.forEach(e => window.removeEventListener(e, resetIdleTimer));
+        clearTimeout(_idleTimer.current);
+      };
+    } else {
+      // 個人PCまたはログアウト：タイマー不要
+      _idleDesktop.current = null;
+      clearTimeout(_idleTimer.current);
+    }
+  }, [currentUser?.desktopName, resetIdleTimer]);
   const [curMonth,setCurMonth]=useState(new Date(nowDate.getFullYear(),nowDate.getMonth(),1));
   const [loanerMonth,setLoanerMonth]=useState(new Date(nowDate.getFullYear(),nowDate.getMonth(),1));
   const [selDate,setSelDate]=useState(new Date(nowDate.getFullYear(),nowDate.getMonth(),nowDate.getDate()));
@@ -5210,7 +5255,7 @@ function AppInner() {
   // 表示中の店舗（ログイン後に切り替え可能）
   const [viewStore,  setViewStore] =useState(()=>{
     // 初期値：ログイン済みユーザーの店舗を復元
-    try{const u=JSON.parse(localStorage.getItem('hub_currentUser')||'null');return u?.store?.id||u?.store||null;}catch{return null;}
+    try{const u=JSON.parse(sessionStorage.getItem('hub_currentUser')||'null');return u?.store?.id||u?.store||null;}catch{return null;}
   }); // 'honten' | 'sanda'
   const vsId = viewStore||'honten';
   // 店舗別データ（本店）
@@ -5410,7 +5455,7 @@ function AppInner() {
         sGet(STOR+'insp').then(v=>{if(v&&typeof v==='object')setInspData(v);});
         // customers.htmlから戻ったとき店舗をログインユーザーに合わせて復元
         try{
-          const saved=localStorage.getItem('hub_currentUser');
+          const saved=sessionStorage.getItem('hub_currentUser');
           if(saved){const u=JSON.parse(saved);const sid=u?.store?.id||u?.store||null;if(sid)setViewStore(sid);}
         }catch(e){}
       }
@@ -6189,10 +6234,10 @@ function AppInner() {
   const handleApprove=useCallback((dk,idx)=>{
     setInspData(prev=>{
       const rows=(prev[dk]||[]).map(r=>r||blankInsp());
-      if(rows[idx]&&rows[idx].pendingApproval){
+      if(rows[idx]){
         const updated={...rows[idx]};
         delete updated.pendingApproval;
-        updated.approved=true; // 承認済みフラグを追加
+        updated.approved=true;
         rows[idx]=updated;
       }
       return{...prev,[dk]:rows};
@@ -6353,7 +6398,8 @@ function AppInner() {
         staffListH={dynStaffH} staffListS={dynStaffS}
         desktopListH={desktopListH} desktopListS={desktopListS}
         onRegister={()=>setShowStaffRegister(true)}
-        onSettings={()=>setShowStaffSettings(true)}/>
+        onSettings={()=>setShowStaffSettings(true)}
+        initialDesktop={_idleDesktop.current}/>
       <StaffRegisterModal
         isOpen={showStaffRegister}
         onClose={()=>setShowStaffRegister(false)}
@@ -7047,44 +7093,76 @@ function AppInner() {
                         const normSt=s=>{if(!s)return'';if(s==='honten'||s==='本店')return'honten';if(s==='sanda'||s==='三田店')return'sanda';return s;};
                         const storeOrder=r=>{const st=normSt(r?.store);if(st===vsId)return 0;if(st)return 1;return 2;};
                         const timeToMin=t=>{if(!t||typeof t!=='string')return 9999;const m=t.match(/(\d+):(\d+)/);return m?parseInt(m[1])*60+parseInt(m[2]):9999;};
-                        const confirmed=allRows
-                          .map((r,i)=>({...(r&&r.name?r:blankInsp()),_origIdx:i}))
-                          .filter(r=>!!(r.name))
-                          .sort((a,b)=>{
-                            const so=storeOrder(a)-storeOrder(b);
-                            if(so!==0)return so;
-                            return timeToMin(a.time)-timeToMin(b.time);
-                          });
-                        const display=[...confirmed,{...blankInsp(),_origIdx:allRows.length}];
+                        const sortFn=(a,b)=>{
+                          const so=storeOrder(a)-storeOrder(b);
+                          if(so!==0)return so;
+                          return timeToMin(a.time)-timeToMin(b.time);
+                        };
+                        const allMapped=allRows.map((r,i)=>({...(r&&r.name?r:blankInsp()),_origIdx:i}));
                         // 台数制限取得（設定なければ6）
                         const dayInspLimit=inspLimits[dk]??6;
-                        
+                        // キャンセル除外・名前あり行を全部ソート
+                        const validRows=allMapped
+                          .filter(r=>!!(r.name)&&r.bookingStatus!=='cancelled')
+                          .sort(sortFn);
+                        // pendingApproval=trueの行、またはフラグなしでも制限超過分は承認待ち扱い
+                        // まずpending=falseの行を制限内と制限超過に分ける
+                        const normalBase=validRows.filter(r=>!r.pendingApproval);
+                        const pendingBase=validRows.filter(r=>r.pendingApproval);
+                        // 制限内（承認済み扱い）
+                        const normalRows=normalBase.slice(0,dayInspLimit);
+                        // 制限超過分（pendingApproval=falseでも承認待ち扱い）
+                        const overLimitRows=normalBase.slice(dayInspLimit);
+                        // 承認待ち行：フラグあり＋制限超過分を合わせる
+                        const pendingRows=[...overLimitRows,...pendingBase].sort(sortFn);
+                        // 追加行のインデックス
+                        const usedIdxs=new Set(validRows.map(r=>r._origIdx));
+                        const recycledIdx=allRows.findIndex((r,i)=>!usedIdxs.has(i)&&(!r||!r.name||r.bookingStatus==='cancelled'));
+                        const addIdx=recycledIdx>=0?recycledIdx:allRows.length;
+
                         const rows=[];
-                        let alertShown=false;
-                        display.forEach((row,dispIdx)=>{
+                        // ① 制限内の通常行
+                        normalRows.forEach((row,dispIdx)=>{
                           const origIdx=row._origIdx??dispIdx;
                           const {_origIdx,...cleanRow}=row;
-                          const isOverLimit=dispIdx>=dayInspLimit;
-                          const isBlankAdd=!row.name&&dispIdx===display.length-1;
-                          
-                          // 制限超過の場合、空の追加行はスキップ
-                          if(isOverLimit&&isBlankAdd)return;
-                          
-                          // 初めての制限超過行の前にアラートバナーを挿入
-                          if(isOverLimit&&!alertShown){
-                            alertShown=true;
-                            rows.push(
-                              <tr key="limit-alert">
-                                <td colSpan={8} style={{padding:'7px 14px',background:'linear-gradient(90deg,#fee2e2,#fff1f2)',border:'2px solid #fca5a5',textAlign:'center',fontSize:12,fontWeight:800,color:'#dc2626'}}>
-                                  🚫 台数制限 — この日の車検は最大 {dayInspLimit}台 です。これ以上の予約はできません。
-                                </td>
-                              </tr>
-                            );
-                          }
                           rows.push(
-                            <InspRow key={`${origIdx}-${dispIdx}`} row={cleanRow} idx={origIdx} dispNo={dispIdx+1} dk={dk} onOpenModal={handleOpenModal} lockInfo={getInspLock(dk,origIdx)} loanerRes={loanerRes} vsId={vsId} onApprove={handleApprove} isOverLimit={isOverLimit} setItems={setItems}/>
+                            <InspRow key={`${origIdx}-${dispIdx}`} row={cleanRow} idx={origIdx} dispNo={dispIdx+1} dk={dk} onOpenModal={handleOpenModal} lockInfo={getInspLock(dk,origIdx)} loanerRes={loanerRes} vsId={vsId} onApprove={handleApprove} isOverLimit={false} setItems={setItems}/>
                           );
                         });
+                        // ② 台数制限超過バナー（超過行がある場合）
+                        if(overLimitRows.length>0){
+                          rows.push(
+                            <tr key="limit-alert">
+                              <td colSpan={8} style={{padding:'7px 14px',background:'linear-gradient(90deg,#fee2e2,#fff1f2)',border:'2px solid #fca5a5',textAlign:'center',fontSize:12,fontWeight:800,color:'#dc2626'}}>
+                                ⚠️ 台数制限（{dayInspLimit}台）超過 — 以下は承認待ちになります
+                              </td>
+                            </tr>
+                          );
+                        }
+                        // ③ 承認待ちバナー（超過行がなくpending行だけの場合）
+                        if(overLimitRows.length===0&&pendingBase.length>0){
+                          rows.push(
+                            <tr key="pending-banner">
+                              <td colSpan={8} style={{padding:'7px 14px',background:'linear-gradient(90deg,#fffbeb,#fef3c7)',border:'2px solid #fcd34d',textAlign:'center',fontSize:12,fontWeight:800,color:'#d97706'}}>
+                                ⏳ 承認待ち（{pendingBase.length}件）— 本店で承認してください
+                              </td>
+                            </tr>
+                          );
+                        }
+                        // ④ 承認待ち行（isOverLimit=false・編集・承認可能）
+                        pendingRows.forEach((row,pi)=>{
+                          const origIdx=row._origIdx??pi;
+                          const {_origIdx,...cleanRow}=row;
+                          // pendingApprovalフラグが立っていない制限超過行にはフラグを付けて表示
+                          const displayRow=cleanRow.pendingApproval?cleanRow:{...cleanRow,pendingApproval:true};
+                          rows.push(
+                            <InspRow key={`pending-${origIdx}-${pi}`} row={displayRow} idx={origIdx} dispNo={normalRows.length+pi+1} dk={dk} onOpenModal={handleOpenModal} lockInfo={getInspLock(dk,origIdx)} loanerRes={loanerRes} vsId={vsId} onApprove={handleApprove} isOverLimit={false} setItems={setItems}/>
+                          );
+                        });
+                        // ⑤ 追加行
+                        rows.push(
+                          <InspRow key={`add-${addIdx}`} row={{...blankInsp()}} idx={addIdx} dispNo={null} dk={dk} onOpenModal={handleOpenModal} lockInfo={null} loanerRes={loanerRes} vsId={vsId} onApprove={handleApprove} isOverLimit={false} setItems={setItems}/>
+                        );
                         return rows;
                       })()}
                     </tbody>
