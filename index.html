@@ -7101,27 +7101,27 @@ function AppInner() {
                         const allMapped=allRows.map((r,i)=>({...(r&&r.name?r:blankInsp()),_origIdx:i}));
                         // 台数制限取得（設定なければ6）
                         const dayInspLimit=inspLimits[dk]??6;
-                        // キャンセル除外・名前あり行を全部ソート
+                        // キャンセル除外・名前あり行をidx順（入力順）で並べる
                         const validRows=allMapped
                           .filter(r=>!!(r.name)&&r.bookingStatus!=='cancelled')
-                          .sort(sortFn);
-                        // pendingApproval=trueの行、またはフラグなしでも制限超過分は承認待ち扱い
-                        // まずpending=falseの行を制限内と制限超過に分ける
-                        const normalBase=validRows.filter(r=>!r.pendingApproval);
-                        const pendingBase=validRows.filter(r=>r.pendingApproval);
-                        // 制限内（承認済み扱い）
-                        const normalRows=normalBase.slice(0,dayInspLimit);
-                        // 制限超過分（pendingApproval=falseでも承認待ち扱い）
-                        const overLimitRows=normalBase.slice(dayInspLimit);
-                        // 承認待ち行：フラグあり＋制限超過分を合わせる
-                        const pendingRows=[...overLimitRows,...pendingBase].sort(sortFn);
+                          .sort((a,b)=>a._origIdx-b._origIdx);
+
+                        // 上段6台：入力順で先着dayInspLimit台を確定（店舗・承認状態に関わらず）
+                        // ただし表示順はログイン店舗優先・時刻順（sortFn）で並べる
+                        const normalRows=validRows.slice(0,dayInspLimit).slice().sort(sortFn);
+
+                        // 下段7台目以降：入力順で7台目以降を時刻順で並べる
+                        const waitingRows=validRows
+                          .slice(dayInspLimit)
+                          .sort((a,b)=>timeToMin(a.time)-timeToMin(b.time));
+
                         // 追加行のインデックス
                         const usedIdxs=new Set(validRows.map(r=>r._origIdx));
                         const recycledIdx=allRows.findIndex((r,i)=>!usedIdxs.has(i)&&(!r||!r.name||r.bookingStatus==='cancelled'));
                         const addIdx=recycledIdx>=0?recycledIdx:allRows.length;
 
                         const rows=[];
-                        // ① 制限内の通常行
+                        // ① 上段：先着6台（店舗・承認状態に関わらず入力順固定）
                         normalRows.forEach((row,dispIdx)=>{
                           const origIdx=row._origIdx??dispIdx;
                           const {_origIdx,...cleanRow}=row;
@@ -7129,8 +7129,8 @@ function AppInner() {
                             <InspRow key={`${origIdx}-${dispIdx}`} row={cleanRow} idx={origIdx} dispNo={dispIdx+1} dk={dk} onOpenModal={handleOpenModal} lockInfo={getInspLock(dk,origIdx)} loanerRes={loanerRes} vsId={vsId} onApprove={handleApprove} isOverLimit={false} setItems={setItems}/>
                           );
                         });
-                        // ② 台数制限超過バナー（超過行がある場合）
-                        if(overLimitRows.length>0){
+                        // ② 台数制限超過バナー（7台目以降がある場合）
+                        if(waitingRows.length>0){
                           rows.push(
                             <tr key="limit-alert">
                               <td colSpan={8} style={{padding:'7px 14px',background:'linear-gradient(90deg,#fee2e2,#fff1f2)',border:'2px solid #fca5a5',textAlign:'center',fontSize:12,fontWeight:800,color:'#dc2626'}}>
@@ -7139,29 +7139,22 @@ function AppInner() {
                             </tr>
                           );
                         }
-                        // ③ 承認待ちバナー（超過行がなくpending行だけの場合）
-                        if(overLimitRows.length===0&&pendingBase.length>0){
-                          rows.push(
-                            <tr key="pending-banner">
-                              <td colSpan={8} style={{padding:'7px 14px',background:'linear-gradient(90deg,#fffbeb,#fef3c7)',border:'2px solid #fcd34d',textAlign:'center',fontSize:12,fontWeight:800,color:'#d97706'}}>
-                                ⏳ 承認待ち（{pendingBase.length}件）— 本店で承認してください
-                              </td>
-                            </tr>
-                          );
-                        }
-                        // ④ 承認待ち行（isOverLimit=false・編集・承認可能）
-                        pendingRows.forEach((row,pi)=>{
+                        // ③ 下段：7台目以降（入力順・承認済みでも位置は変わらない）
+                        waitingRows.forEach((row,pi)=>{
                           const origIdx=row._origIdx??pi;
                           const {_origIdx,...cleanRow}=row;
-                          // pendingApprovalフラグが立っていない制限超過行にはフラグを付けて表示
-                          const displayRow=cleanRow.pendingApproval?cleanRow:{...cleanRow,pendingApproval:true};
+                          // 承認済み行はそのまま（承認済みバッジ）、未承認行は承認待ちフラグ付与
+                          const displayRow=cleanRow.approved
+                            ?{...cleanRow,pendingApproval:false}  // 承認済み：承認待ちバッジ消す
+                            :{...cleanRow,pendingApproval:true};  // 未承認：承認待ちバッジ表示
                           rows.push(
-                            <InspRow key={`pending-${origIdx}-${pi}`} row={displayRow} idx={origIdx} dispNo={normalRows.length+pi+1} dk={dk} onOpenModal={handleOpenModal} lockInfo={getInspLock(dk,origIdx)} loanerRes={loanerRes} vsId={vsId} onApprove={handleApprove} isOverLimit={false} setItems={setItems}/>
+                            <InspRow key={`waiting-${origIdx}-${pi}`} row={displayRow} idx={origIdx} dispNo={normalRows.length+pi+1} dk={dk} onOpenModal={handleOpenModal} lockInfo={getInspLock(dk,origIdx)} loanerRes={loanerRes} vsId={vsId} onApprove={handleApprove} isOverLimit={false} setItems={setItems}/>
                           );
                         });
-                        // ⑤ 追加行
+                        // ④ 追加行（isNew=trueで開く）
+                        const addDispNo=normalRows.length+waitingRows.length+1;
                         rows.push(
-                          <InspRow key={`add-${addIdx}`} row={{...blankInsp()}} idx={addIdx} dispNo={null} dk={dk} onOpenModal={handleOpenModal} lockInfo={null} loanerRes={loanerRes} vsId={vsId} onApprove={handleApprove} isOverLimit={false} setItems={setItems}/>
+                          <InspRow key={`add-${addIdx}`} row={{...blankInsp()}} idx={addIdx} dispNo={addDispNo} dk={dk} onOpenModal={(type,dk2,idx2,slot)=>handleOpenModal(type,dk2,idx2,slot,true)} lockInfo={null} loanerRes={loanerRes} vsId={vsId} onApprove={handleApprove} isOverLimit={false} setItems={setItems}/>
                         );
                         return rows;
                       })()}
