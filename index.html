@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Hub a Nice Day v85</title>
+  <title>Hub a Nice Day v1.0</title>
   <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
@@ -29,6 +29,12 @@
   <div id="root"></div>
   <script type="text/babel" data-presets="react">
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, memo, useMemo } = React;
+
+// ★ バージョン管理：アップデートのたびにここだけ変更する
+const APP_VERSION = '1.0';
+
+
+
 
 
 // Lucide icon shims (SVG)
@@ -86,37 +92,44 @@ const STORES = [
 
 // -- 業務バッジ定義 --
 const BADGES = [
-  {id:'president', label:'代表',        icon:'代', shape:'square', color:'#92400e', bg:'#fef3c7', desc:'代表取締役'},
-  {id:'inspector', label:'検査員',      icon:'検', shape:'square', color:'#7c3aed', bg:'#ede9fe', desc:'車検適合書を発行できる'},
-  {id:'mechanic',  label:'一般整備士',  icon:'整', shape:'square', color:'#2563eb', bg:'#eff6ff', desc:'一般整備・修理'},
-  {id:'bodywork',  label:'鈑金塗装技士',icon:'BP', shape:'square', color:'#d97706', bg:'#fffbeb', desc:'鈑金・塗装専門'},
-  {id:'office',    label:'事務員',      icon:'事', shape:'square', color:'#059669', bg:'#ecfdf5', desc:'受付・事務処理'},
-  {id:'assistant', label:'整備補助員',  icon:'助', shape:'square', color:'#dc2626', bg:'#fef2f2', desc:'外国人助っ人'},
-  {id:'sales',     label:'販売',        icon:'販', shape:'square', color:'#0891b2', bg:'#ecfeff', desc:'車両販売・商談'},
+  {id:'president',  label:'代表',        icon:'代', shape:'square', color:'#92400e', bg:'#fef3c7', desc:'代表取締役'},
+  {id:'manager',    label:'店長',        icon:'店', shape:'square', color:'#0f766e', bg:'#f0fdfa', desc:'店舗責任者'},
+  {id:'foreman',    label:'工場長',      icon:'工', shape:'square', color:'#1e40af', bg:'#eff6ff', desc:'工場管理責任者'},
+  {id:'inspector',  label:'検査員',      icon:'検', shape:'square', color:'#7c3aed', bg:'#ede9fe', desc:'車検適合書を発行できる'},
+  {id:'mechanic',   label:'一般整備士',  icon:'整', shape:'square', color:'#2563eb', bg:'#eff6ff', desc:'一般整備・修理'},
+  {id:'bodywork',   label:'鈑金塗装技士',icon:'BP', shape:'square', color:'#d97706', bg:'#fffbeb', desc:'鈑金・塗装専門'},
+  {id:'office',     label:'事務員',      icon:'事', shape:'square', color:'#059669', bg:'#ecfdf5', desc:'受付・事務処理'},
+  {id:'assistant',  label:'整備補助員',  icon:'助', shape:'square', color:'#dc2626', bg:'#fef2f2', desc:'外国人助っ人'},
+  {id:'sales',      label:'販売',        icon:'販', shape:'square', color:'#0891b2', bg:'#ecfeff', desc:'車両販売・商談'},
 ];
-const getBadge = (id) => BADGES.find(b=>b.id===id)||BADGES[1];
+const getBadge = (id) => BADGES.find(b=>b.id===id)||BADGES[3];
 
 // -- 対応可能業務（capabilities）定義 --
 const CAPABILITIES = [
-  {id:'insp_front', label:'車検フロント対応', desc:'車検受付・お客様対応・同時入庫カウント対象', icon:'🔑', default:true},
-  {id:'sched_front', label:'整備フロント対応', desc:'整備受付・お客様対応', icon:'🔧', default:true},
-  {id:'insp_work', label:'車検作業', desc:'車検整備作業', icon:'🚗', default:true},
-  {id:'sched_work', label:'整備作業', desc:'一般整備作業', icon:'🔩', default:true},
+  {id:'insp_front',  label:'車検フロント対応', desc:'車検受付・お客様対応・同時入庫カウント対象', icon:'🔑', default:true},
+  {id:'sched_front', label:'整備フロント対応', desc:'整備受付・お客様対応',                       icon:'🔧', default:true},
+  {id:'insp_work',   label:'車検作業',         desc:'車検整備作業',                               icon:'🚗', default:true},
+  {id:'sched_work',  label:'整備作業',         desc:'一般整備作業',                               icon:'🔩', default:true},
+  {id:'insp_check',  label:'検査員',           desc:'車検適合判定・検査印を押せる',               icon:'🔍', default:false},
 ];
 const getDefaultCapabilities = (badge) => {
   // 鈑金塗装技士・整備補助員はフロント対応不可がデフォルト
   if(badge==='bodywork'||badge==='assistant'){
-    return {insp_front:false, sched_front:false, insp_work:true, sched_work:true};
+    return {insp_front:false, sched_front:false, insp_work:true, sched_work:true, insp_check:false};
   }
-  // 事務員は整備作業不可がデフォルト
-  if(badge==='office'){
-    return {insp_front:true, sched_front:true, insp_work:false, sched_work:false};
+  // 事務員・販売はフロント対応のみ
+  if(badge==='office'||badge==='sales'){
+    return {insp_front:true, sched_front:true, insp_work:false, sched_work:false, insp_check:false};
   }
-  // 販売はフロント対応のみ
-  if(badge==='sales'){
-    return {insp_front:true, sched_front:true, insp_work:false, sched_work:false};
+  // 検査員バッジは検査員ONがデフォルト
+  if(badge==='inspector'){
+    return {insp_front:true, sched_front:true, insp_work:true, sched_work:true, insp_check:true};
   }
-  return {insp_front:true, sched_front:true, insp_work:true, sched_work:true};
+  // 店長・工場長は全対応がデフォルト
+  if(badge==='manager'||badge==='foreman'){
+    return {insp_front:true, sched_front:true, insp_work:true, sched_work:true, insp_check:false};
+  }
+  return {insp_front:true, sched_front:true, insp_work:true, sched_work:true, insp_check:false};
 };
 
 // バッジアイコンレンダラー（文字アイコン）
@@ -1498,7 +1511,9 @@ const GCSS=`
   .slide-in{animation:slideIn 0.2s ease both;}
   .fade-in{animation:fadeIn 0.18s ease both;}
   *{box-sizing:border-box;} input,select,textarea,button{font-family:inherit;}
-  ::-webkit-scrollbar{width:6px;height:6px} ::-webkit-scrollbar-track{background:#f1f5f9} ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
+  ::-webkit-scrollbar{width:6px;height:6px}
+  ::-webkit-scrollbar-track{background:#f1f5f9}
+  ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
 `;
 
 const SEC_INSP='sec-insp', SEC_SCHED='sec-sched', SEC_NOTES='sec-notes';
@@ -2004,9 +2019,15 @@ const StaffSettingsModal=memo(({isOpen,onClose,staffListH,staffListS,onUpdate,on
 // ============================================
 //  ログイン
 // ============================================
-const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopListH,desktopListS})=>{
+const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopListH,desktopListS,initialDesktop})=>{
   const [sel,setSel]=useState(null);
-  const [deskSel,setDeskSel]=useState(null);
+  // タイムアウト後（initialDesktopあり）はすぐスタッフ選択画面を表示
+  const [deskSel,setDeskSel]=useState(()=>{
+    if(!initialDesktop) return null;
+    // desktopListから一致するものを探す
+    const all=[...(desktopListH||[]).map(d=>({...d,store:'honten'})),...(desktopListS||[]).map(d=>({...d,store:'sanda'}))];
+    return all.find(d=>d.name===initialDesktop.name&&d.store===initialDesktop.store)||{name:initialDesktop.name,store:initialDesktop.store,uid:'_idle'};
+  });
 
   const StorePanel=({store,staffList})=>{
     const isSelected=store.id===sel?.store?.id;
@@ -2093,6 +2114,7 @@ const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopL
           <div style={{fontSize:44,marginBottom:6}}>🚗</div>
           <h1 style={{fontSize:22,fontWeight:900,color:'#1e1b4b',margin:0}}>Hub a Nice day</h1>
           <p style={{fontSize:12,color:'#6b7280',marginTop:4}}>統合管理システム</p>
+          <span style={{display:'inline-block',marginTop:6,padding:'2px 10px',borderRadius:20,background:'#eff6ff',border:'1px solid #bfdbfe',color:'#1d4ed8',fontSize:11,fontWeight:700}}>v{APP_VERSION}</span>
         </div>
         {/* 社長エリア（0番・本店・三田店の枠外上部） */}
         {(()=>{
@@ -5168,17 +5190,55 @@ function AppInner() {
   // ★修正4: sessionStorageでログイン状態を保持（リロード後も維持）
   const [currentUser,setCurrentUser]=useState(()=>{
     try{
-      const saved=localStorage.getItem('hub_currentUser');
+      // sessionStorage：ブラウザ（タブ）を閉じたらログアウト
+      const saved=sessionStorage.getItem('hub_currentUser');
       return saved?JSON.parse(saved):null;
     }catch{return null;}
   });
   const setCurrentUserPersist=useCallback((user)=>{
     setCurrentUser(user);
     try{
-      if(user) localStorage.setItem('hub_currentUser',JSON.stringify(user));
-      else localStorage.removeItem('hub_currentUser');
+      if(user) sessionStorage.setItem('hub_currentUser',JSON.stringify(user));
+      else sessionStorage.removeItem('hub_currentUser');
     }catch{}
   },[]);
+
+  // ── 共有PC：10分無操作でスタッフ選択画面に戻る ──
+  const _idleTimer = useRef(null);
+  const _idleDesktop = useRef(null); // タイムアウト時に戻る共有PC情報
+
+  const resetIdleTimer = useCallback(() => {
+    if(!_idleDesktop.current) return;
+    clearTimeout(_idleTimer.current);
+    _idleTimer.current = setTimeout(() => {
+      // スタッフのみログアウト（共有PC情報は保持）
+      setCurrentUser(null);
+      try{ sessionStorage.removeItem('hub_currentUser'); }catch{}
+    }, 10 * 60 * 1000); // 10分
+  }, []);
+
+  // 共有PCログイン時にタイマー開始、個人PCはタイマー不要
+  useEffect(() => {
+    if(currentUser?.desktopName) {
+      // 共有PCログイン：デスクトップ情報を記憶してタイマー開始
+      _idleDesktop.current = {
+        name: currentUser.desktopName,
+        store: currentUser.store?.id || currentUser.store,
+      };
+      // 操作イベントでタイマーリセット
+      const events = ['mousedown','mousemove','keydown','touchstart','scroll','click'];
+      events.forEach(e => window.addEventListener(e, resetIdleTimer, {passive:true}));
+      resetIdleTimer();
+      return () => {
+        events.forEach(e => window.removeEventListener(e, resetIdleTimer));
+        clearTimeout(_idleTimer.current);
+      };
+    } else {
+      // 個人PCまたはログアウト：タイマー不要
+      _idleDesktop.current = null;
+      clearTimeout(_idleTimer.current);
+    }
+  }, [currentUser?.desktopName, resetIdleTimer]);
   const [curMonth,setCurMonth]=useState(new Date(nowDate.getFullYear(),nowDate.getMonth(),1));
   const [loanerMonth,setLoanerMonth]=useState(new Date(nowDate.getFullYear(),nowDate.getMonth(),1));
   const [selDate,setSelDate]=useState(new Date(nowDate.getFullYear(),nowDate.getMonth(),nowDate.getDate()));
@@ -5194,7 +5254,7 @@ function AppInner() {
   // 表示中の店舗（ログイン後に切り替え可能）
   const [viewStore,  setViewStore] =useState(()=>{
     // 初期値：ログイン済みユーザーの店舗を復元
-    try{const u=JSON.parse(localStorage.getItem('hub_currentUser')||'null');return u?.store?.id||u?.store||null;}catch{return null;}
+    try{const u=JSON.parse(sessionStorage.getItem('hub_currentUser')||'null');return u?.store?.id||u?.store||null;}catch{return null;}
   }); // 'honten' | 'sanda'
   const vsId = viewStore||'honten';
   // 店舗別データ（本店）
@@ -5394,7 +5454,7 @@ function AppInner() {
         sGet(STOR+'insp').then(v=>{if(v&&typeof v==='object')setInspData(v);});
         // customers.htmlから戻ったとき店舗をログインユーザーに合わせて復元
         try{
-          const saved=localStorage.getItem('hub_currentUser');
+          const saved=sessionStorage.getItem('hub_currentUser');
           if(saved){const u=JSON.parse(saved);const sid=u?.store?.id||u?.store||null;if(sid)setViewStore(sid);}
         }catch(e){}
       }
@@ -6337,7 +6397,8 @@ function AppInner() {
         staffListH={dynStaffH} staffListS={dynStaffS}
         desktopListH={desktopListH} desktopListS={desktopListS}
         onRegister={()=>setShowStaffRegister(true)}
-        onSettings={()=>setShowStaffSettings(true)}/>
+        onSettings={()=>setShowStaffSettings(true)}
+        initialDesktop={_idleDesktop.current}/>
       <StaffRegisterModal
         isOpen={showStaffRegister}
         onClose={()=>setShowStaffRegister(false)}
@@ -6382,6 +6443,7 @@ function AppInner() {
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
               <div style={{display:'flex',alignItems:'center',gap:7,fontSize:16,fontWeight:800,color:'#3730a3'}}>
                 <Car size={22}/> Hub a Nice day
+                <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:10,background:'#eff6ff',color:'#1d4ed8',border:'1px solid #bfdbfe',cursor:'default'}}>v{APP_VERSION}</span>
                 {/* GAS接続ステータスバッジ */}
                 {gasStatus==='unconfigured'&&(
                   <span title="GAS未設定：データはこのブラウザにのみ保存されます" style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:10,background:'#fef3c7',color:'#d97706',border:'1px solid #fbbf24',cursor:'default'}}>⚠ GAS未設定</span>
@@ -7038,7 +7100,11 @@ function AppInner() {
                             if(so!==0)return so;
                             return timeToMin(a.time)-timeToMin(b.time);
                           });
-                        const display=[...confirmed,{...blankInsp(),_origIdx:confirmed.length}];
+                        // 追加行のインデックス：空行・cancelled行があれば再利用、なければ末尾に追加
+                        const usedIdxs=new Set(confirmed.map(r=>r._origIdx));
+                        const recycledIdx=allRows.findIndex((r,i)=>!usedIdxs.has(i)&&(!r||!r.name||r.bookingStatus==='cancelled'));
+                        const addIdx=recycledIdx>=0?recycledIdx:allRows.length;
+                        const display=[...confirmed,{...blankInsp(),_origIdx:addIdx}];
                         // 台数制限取得（設定なければ6）
                         const dayInspLimit=inspLimits[dk]??6;
                         
@@ -7050,16 +7116,13 @@ function AppInner() {
                           const isOverLimit=dispIdx>=dayInspLimit;
                           const isBlankAdd=!row.name&&dispIdx===display.length-1;
                           
-                          // 制限超過の場合、空の追加行はスキップ
-                          if(isOverLimit&&isBlankAdd)return;
-                          
                           // 初めての制限超過行の前にアラートバナーを挿入
-                          if(isOverLimit&&!alertShown){
+                          if(isOverLimit&&!alertShown&&!isBlankAdd){
                             alertShown=true;
                             rows.push(
                               <tr key="limit-alert">
                                 <td colSpan={8} style={{padding:'7px 14px',background:'linear-gradient(90deg,#fee2e2,#fff1f2)',border:'2px solid #fca5a5',textAlign:'center',fontSize:12,fontWeight:800,color:'#dc2626'}}>
-                                  🚫 台数制限 — この日の車検は最大 {dayInspLimit}台 です。これ以上の予約はできません。
+                                  ⚠️ 台数制限（{dayInspLimit}台）超過 — 以下は承認待ちになります
                                 </td>
                               </tr>
                             );
