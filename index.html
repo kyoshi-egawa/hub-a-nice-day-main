@@ -3672,7 +3672,8 @@ const InspRow=memo(({row,idx,dispNo,dk,onOpenModal,lockInfo,loanerRes,vsId,onApp
   const pending=row.pendingApproval;
   const approved=row.approved;
   const canApprove=pending&&vsId==='honten';
-  const blocked=(!isEmpty&&isOverLimit)||locked||otherStore;
+  // 承認待ち行は本店ユーザーが承認・編集できる必要があるため otherStore でブロックしない
+  const blocked=(!isEmpty&&isOverLimit)||locked||(otherStore&&!canApprove);
   const isCancelled=row.bookingStatus==='cancelled';
 
   const noteQItems=setItems||[];
@@ -7092,33 +7093,34 @@ function AppInner() {
                         const normSt=s=>{if(!s)return'';if(s==='honten'||s==='本店')return'honten';if(s==='sanda'||s==='三田店')return'sanda';return s;};
                         const storeOrder=r=>{const st=normSt(r?.store);if(st===vsId)return 0;if(st)return 1;return 2;};
                         const timeToMin=t=>{if(!t||typeof t!=='string')return 9999;const m=t.match(/(\d+):(\d+)/);return m?parseInt(m[1])*60+parseInt(m[2]):9999;};
-                        const confirmed=allRows
-                          .map((r,i)=>({...(r&&r.name?r:blankInsp()),_origIdx:i}))
-                          .filter(r=>!!(r.name))
-                          .sort((a,b)=>{
-                            const so=storeOrder(a)-storeOrder(b);
-                            if(so!==0)return so;
-                            return timeToMin(a.time)-timeToMin(b.time);
-                          });
+                        const sortFn=(a,b)=>{
+                          const so=storeOrder(a)-storeOrder(b);
+                          if(so!==0)return so;
+                          return timeToMin(a.time)-timeToMin(b.time);
+                        };
+                        const allMapped=allRows.map((r,i)=>({...(r&&r.name?r:blankInsp()),_origIdx:i}));
+                        // 通常行（承認済み・キャンセルでない）と承認待ち行を分離
+                        const normalRows=allMapped
+                          .filter(r=>!!(r.name)&&!r.pendingApproval&&r.bookingStatus!=='cancelled')
+                          .sort(sortFn);
+                        const pendingRows=allMapped
+                          .filter(r=>!!(r.name)&&r.pendingApproval&&r.bookingStatus!=='cancelled')
+                          .sort(sortFn);
                         // 追加行のインデックス：空行・cancelled行があれば再利用、なければ末尾に追加
-                        const usedIdxs=new Set(confirmed.map(r=>r._origIdx));
+                        const usedIdxs=new Set([...normalRows,...pendingRows].map(r=>r._origIdx));
                         const recycledIdx=allRows.findIndex((r,i)=>!usedIdxs.has(i)&&(!r||!r.name||r.bookingStatus==='cancelled'));
                         const addIdx=recycledIdx>=0?recycledIdx:allRows.length;
-                        const display=[...confirmed,{...blankInsp(),_origIdx:addIdx}];
                         // 台数制限取得（設定なければ6）
                         const dayInspLimit=inspLimits[dk]??6;
-                        
+
                         const rows=[];
-                        let alertShown=false;
-                        display.forEach((row,dispIdx)=>{
+                        // ① 通常行（isOverLimit判定あり）
+                        normalRows.forEach((row,dispIdx)=>{
                           const origIdx=row._origIdx??dispIdx;
                           const {_origIdx,...cleanRow}=row;
                           const isOverLimit=dispIdx>=dayInspLimit;
-                          const isBlankAdd=!row.name&&dispIdx===display.length-1;
-                          
                           // 初めての制限超過行の前にアラートバナーを挿入
-                          if(isOverLimit&&!alertShown&&!isBlankAdd){
-                            alertShown=true;
+                          if(isOverLimit&&rows.length>0&&rows[rows.length-1].key!=='limit-alert'){
                             rows.push(
                               <tr key="limit-alert">
                                 <td colSpan={8} style={{padding:'7px 14px',background:'linear-gradient(90deg,#fee2e2,#fff1f2)',border:'2px solid #fca5a5',textAlign:'center',fontSize:12,fontWeight:800,color:'#dc2626'}}>
@@ -7131,6 +7133,28 @@ function AppInner() {
                             <InspRow key={`${origIdx}-${dispIdx}`} row={cleanRow} idx={origIdx} dispNo={dispIdx+1} dk={dk} onOpenModal={handleOpenModal} lockInfo={getInspLock(dk,origIdx)} loanerRes={loanerRes} vsId={vsId} onApprove={handleApprove} isOverLimit={isOverLimit} setItems={setItems}/>
                           );
                         });
+                        // ② 承認待ちバナー（承認待ち行がある場合）
+                        if(pendingRows.length>0){
+                          rows.push(
+                            <tr key="pending-banner">
+                              <td colSpan={8} style={{padding:'7px 14px',background:'linear-gradient(90deg,#fffbeb,#fef3c7)',border:'2px solid #fcd34d',textAlign:'center',fontSize:12,fontWeight:800,color:'#d97706'}}>
+                                ⏳ 承認待ち（{pendingRows.length}件）— 本店で承認してください
+                              </td>
+                            </tr>
+                          );
+                        }
+                        // ③ 承認待ち行（isOverLimit=false で編集・承認可能）
+                        pendingRows.forEach((row,pi)=>{
+                          const origIdx=row._origIdx??pi;
+                          const {_origIdx,...cleanRow}=row;
+                          rows.push(
+                            <InspRow key={`pending-${origIdx}-${pi}`} row={cleanRow} idx={origIdx} dispNo={normalRows.length+pi+1} dk={dk} onOpenModal={handleOpenModal} lockInfo={getInspLock(dk,origIdx)} loanerRes={loanerRes} vsId={vsId} onApprove={handleApprove} isOverLimit={false} setItems={setItems}/>
+                          );
+                        });
+                        // ④ 追加行
+                        rows.push(
+                          <InspRow key={`add-${addIdx}`} row={{...blankInsp()}} idx={addIdx} dispNo={null} dk={dk} onOpenModal={handleOpenModal} lockInfo={null} loanerRes={loanerRes} vsId={vsId} onApprove={handleApprove} isOverLimit={false} setItems={setItems}/>
+                        );
                         return rows;
                       })()}
                     </tbody>
