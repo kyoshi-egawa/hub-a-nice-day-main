@@ -1167,11 +1167,13 @@ const App=()=>{
             const custs=f.customers.map(c=>{
               // custIdまたはname+noでマッチング
               const upd=fresh.find(u=>{
-                if(u.custId&&c.custId&&u.custId===c.custId)return true;
+                // custIdが両方あればcustIdで一致確認（最優先）
+                if(u.custId&&c.custId)return u.custId===c.custId;
+                // custIdがない場合はname+noで一致確認
                 if(!u.name||u.name!==c.name)return false;
-                // 名前が一致 → noも両方あればnoも一致確認、片方ないなら名前だけで一致
                 if(u.no&&c.no)return String(u.no)===String(c.no);
-                return true; // noがどちらかにない場合は名前一致で更新
+                // noが片方ない場合は名前だけで一致（後方互換）
+                return !u.no&&!c.no;
               });
               if(!upd)return c;
               changed=true;
@@ -1255,15 +1257,45 @@ const App=()=>{
       });
       return next;
     });
-    // cust-updatesからキャンセル通知を削除（ポーリングで再cancelされないよう）
-    sGet(STOR+'cust-updates').then(updates=>{
-      if(!Array.isArray(updates)||updates.length===0)return;
-      const filtered=updates.filter(u=>
-        !(u.custId&&u.custId===customer.custId)&&
-        !(u.name&&u.name===customer.name&&String(u.no||'')===String(customer.no||''))
-      );
-      if(filtered.length!==updates.length)sSet(STOR+'cust-updates',filtered);
-    }).catch(()=>{});
+    // cust-updatesからキャンセル通知を削除し、GAS側も'none'で上書き
+    (async()=>{
+      try{
+        // まずキューの古いキャンセル通知を削除
+        const updates=await sGet(STOR+'cust-updates')||[];
+        const filtered=updates.filter(u=>
+          !(u.custId&&u.custId===customer.custId)&&
+          !(u.name&&u.name===customer.name&&String(u.no||'')===String(customer.no||''))
+        );
+        await sSet(STOR+'cust-updates',filtered);
+        // GASチャンクも即時更新（revived状態をGASに書き込む）
+        // これをしないと次のpollUpdates時に古いcancel状態で上書きされる
+        const SAFE=n=>n.replace(/[^a-zA-Z0-9　-鿿゠-ヿ぀-ゟ]/g,'_').slice(0,30);
+        const cfIdx=await sGet(STOR+'cf-index');
+        if(!Array.isArray(cfIdx))return;
+        for(const fi of cfIdx){
+          const sn=SAFE(fi.name);
+          const chunkMeta=await sGet(STOR+'cf-'+sn+'-index');
+          if(!chunkMeta)continue;
+          for(let ci2=0;ci2<chunkMeta.chunks;ci2++){
+            const chunk=await sGet(STOR+'cf-'+sn+'-chunk-'+ci2);
+            if(!Array.isArray(chunk))continue;
+            let changed=false;
+            const newChunk=chunk.map(c=>{
+              const match=(customer.custId&&c.custId===customer.custId)||
+                          (c.name===customer.name&&String(c.no||'')===String(customer.no||''));
+              if(!match)return c;
+              changed=true;
+              return{...c,status:'none',entryDate:'',linkedInspDate:'',
+                bookingTime:'',course:'',tokuten:'',staff:'',note:''};
+            });
+            if(changed){
+              await sSet(STOR+'cf-'+sn+'-chunk-'+ci2,newChunk);
+              break;
+            }
+          }
+        }
+      }catch(e){console.error('handleRevive sync error:',e);}
+    })();
   },[]);
 
   const handleBookingSave=useCallback(async(form,customer)=>{
