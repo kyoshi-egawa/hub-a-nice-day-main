@@ -1166,9 +1166,13 @@ const App=()=>{
           const next=prev.map(f=>{
             const custs=f.customers.map(c=>{
               // custIdまたはname+noでマッチング
-              const upd=fresh.find(u=>
-                (u.custId&&u.custId===c.custId)||(u.name&&((!u.no&&u.name===c.name)||(u.no&&u.name===c.name&&String(u.no)===String(c.no))))
-              );
+              const upd=fresh.find(u=>{
+                if(u.custId&&c.custId&&u.custId===c.custId)return true;
+                if(!u.name||u.name!==c.name)return false;
+                // 名前が一致 → noも両方あればnoも一致確認、片方ないなら名前だけで一致
+                if(u.no&&c.no)return String(u.no)===String(c.no);
+                return true; // noがどちらかにない場合は名前一致で更新
+              });
               if(!upd)return c;
               changed=true;
               // statusとextraFieldsのみ更新（他フィールドは保護）
@@ -1186,8 +1190,14 @@ const App=()=>{
       }catch{}
     };
     pollUpdates(); // 開いた瞬間に即時適用
+    // 画面切り替え時（index.htmlから戻った瞬間）に即時反映
+    const onVisible=()=>{ if(document.visibilityState==='visible') pollUpdates(); };
+    document.addEventListener('visibilitychange',onVisible);
     const pollTimer=setInterval(pollUpdates,3000);
-    return()=>clearInterval(pollTimer);
+    return()=>{
+      clearInterval(pollTimer);
+      document.removeEventListener('visibilitychange',onVisible);
+    };
   },[]);
 
   // Excelインポート
