@@ -4993,7 +4993,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
     const targetX=thWidth+targetIndex*cellWidth;
     const containerW=gridRef.current.clientWidth;
     // 本日が左端から3列目に来るよう設定（左に2日分の余白）
-    gridRef.current.scrollLeft=targetX-thWidth-cellWidth*2;
+    gridRef.current.scrollLeft=targetIndex*cellWidth-cellWidth*2;
     scrollLock.current=true;
   },[selDate]); // dateRangeを削除（selDateから計算されるため不要）
 
