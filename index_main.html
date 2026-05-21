@@ -5441,7 +5441,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
         const getRState=(carId,dateObj)=>{
           const {year,month,day}=dateObj;
           const dn=toNum(year,month,day);
-          const resList=rentalResLocal[carId]||[];
+          const _raw=rentalResLocal[carId]; const resList=Array.isArray(_raw)?_raw:(_raw?Object.values(_raw):[]);
           for(const r of resList){
             if(dn>=toNum(r.fy,r.fm,r.fd)&&dn<=toNum(r.ty,r.tm,r.td))return r;
           }
