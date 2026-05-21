@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-<title>Hub a Nice Day - 顧客リスト</title>
+<title>Hub a Nice Day - 顧客リスト [DEV]</title>
 <meta name="theme-color" content="#1E3A5F"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
@@ -80,6 +80,7 @@ const deleteFileFromCache=(file)=>{
   const sn=safeName(file.name);
   try{localStorage.removeItem('hub-cf-'+sn);}catch(e){}
 };
+const RES_COLORS=['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ec4899','#06b6d4','#f97316','#e11d48','#14b8a6','#a855f7'];
 
 const COURSES=[
   {id:1,name:'マッハ車検',  short:'マ',color:'#b91c1c',bg:'#fca5a5'},
@@ -364,13 +365,7 @@ const parseExcelFile=async(file)=>{
           }
 
           // コース変換
-          const courseObj=COURSES.find(c=>{
-            const r=courseRaw.replace(/車検/g,'').trim();
-            return courseRaw.includes(c.name)||courseRaw===c.short||
-                   c.name.includes(r)||r===c.short||
-                   // 略称マッチ: レギュラー→レギュラー車検, クイック→クイック車検, マッハ→マッハ車検
-                   (r.length>=2&&c.name.startsWith(r));
-          });
+          const courseObj=COURSES.find(c=>courseRaw.includes(c.name)||courseRaw===c.short);
 
           // 店舗変換
           let storeId='';
@@ -486,7 +481,7 @@ const LoanerGrid=memo(({storeId,entryDate,loanerRes,loanerList,onSelect,selCarId
   const isBooked=(carId,key)=>{
     const [ky,km,kd]=key.split('-').map(Number);
     const dn=toNum(ky,km-1,kd);
-    return(loanerRes[carId]||[]).some(r=>{
+    return Object.values(loanerRes[carId]||{}).some(r=>{
       const s=toNum(r.fy,r.fm,r.fd),e=toNum(r.ty,r.tm,r.td);
       return dn>=s&&dn<=e;
     });
@@ -736,8 +731,9 @@ const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerL
   const noteRef=useRef(null);
   // モーダルを開いたとき入庫時間にフォーカス
   useEffect(()=>{
-    const t=setTimeout(()=>{setFocusField('time');timeRef.current?.focus();},150);
-    return()=>clearTimeout(t);
+    // モーダルを開いたとき最上部にスクロール（日付入力が最初のため）
+    const el=document.getElementById('booking-modal-scroll');
+    if(el) el.scrollTop=0;
   },[customer.custId]);
 
   const dynListH=(loanerListH&&loanerListH.length>0)?loanerListH:LOANERS_H;
@@ -850,7 +846,7 @@ const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerL
           </div>
           <button onClick={onClose} style={{background:'rgba(255,255,255,.15)',border:'none',borderRadius:8,padding:'6px 12px',color:'white',fontSize:13,fontWeight:700}}>✕</button>
         </div>
-        <div style={{overflowY:'auto',flex:1,padding:18}}>
+        <div id='booking-modal-scroll' style={{overflowY:'auto',flex:1,padding:18}}>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:14}}>
             <div>
               <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:5,flexWrap:'wrap'}}>
@@ -1134,8 +1130,25 @@ const App=()=>{
           for(const fi of fileIndex){
             loadFileChunked(fi.name).then(f=>{
               if(f){
-                localStorage.setItem('hub-cf-'+SAFE(fi.name),JSON.stringify(f));
+                // GASキャッシュが古い場合でもローカルの予約状態を守る
                 setFiles(prev=>{
+                  const existing=prev.find(p=>p.name===f.name);
+                  if(existing){
+                    // ローカルのconfirm/tempをGASの古いデータで上書きしない
+                    const merged={...f,customers:f.customers.map(fc=>{
+                      const lc=existing.customers.find(c=>c.custId===fc.custId);
+                      if(!lc)return fc;
+                      // ローカルの方がステータスが進んでいれば保持
+                      const priority={confirm:3,temp:2,new_car:2,cancel:1,none:0};
+                      const lp=priority[lc.status||'none']||0;
+                      const fp=priority[fc.status||'none']||0;
+                      return lp>fp?lc:fc;
+                    })};
+                    localStorage.setItem('hub-cf-'+SAFE(fi.name),JSON.stringify(merged));
+                    return prev.map(p=>p.name===f.name?merged:p);
+                  }
+                  localStorage.setItem('hub-cf-'+SAFE(fi.name),JSON.stringify(f));
+                  return [...prev,f];
                   const i=prev.findIndex(x=>x.name===f.name);
                   if(i>=0){const n=[...prev];n[i]=f;return n;}
                   return[...prev,f];
@@ -1166,15 +1179,9 @@ const App=()=>{
           const next=prev.map(f=>{
             const custs=f.customers.map(c=>{
               // custIdまたはname+noでマッチング
-              const upd=fresh.find(u=>{
-                // custIdが両方あればcustIdで一致確認（最優先）
-                if(u.custId&&c.custId)return u.custId===c.custId;
-                // custIdがない場合はname+noで一致確認
-                if(!u.name||u.name!==c.name)return false;
-                if(u.no&&c.no)return String(u.no)===String(c.no);
-                // noが片方ない場合は名前だけで一致（後方互換）
-                return !u.no&&!c.no;
-              });
+              const upd=fresh.find(u=>
+                (u.custId&&u.custId===c.custId)||(u.name&&((!u.no&&u.name===c.name)||(u.no&&u.name===c.name&&String(u.no)===String(c.no))))
+              );
               if(!upd)return c;
               changed=true;
               // statusとextraFieldsのみ更新（他フィールドは保護）
@@ -1192,14 +1199,8 @@ const App=()=>{
       }catch{}
     };
     pollUpdates(); // 開いた瞬間に即時適用
-    // 画面切り替え時（index.htmlから戻った瞬間）に即時反映
-    const onVisible=()=>{ if(document.visibilityState==='visible') pollUpdates(); };
-    document.addEventListener('visibilitychange',onVisible);
     const pollTimer=setInterval(pollUpdates,3000);
-    return()=>{
-      clearInterval(pollTimer);
-      document.removeEventListener('visibilitychange',onVisible);
-    };
+    return()=>clearInterval(pollTimer);
   },[]);
 
   // Excelインポート
@@ -1257,45 +1258,15 @@ const App=()=>{
       });
       return next;
     });
-    // cust-updatesからキャンセル通知を削除し、GAS側も'none'で上書き
-    (async()=>{
-      try{
-        // まずキューの古いキャンセル通知を削除
-        const updates=await sGet(STOR+'cust-updates')||[];
-        const filtered=updates.filter(u=>
-          !(u.custId&&u.custId===customer.custId)&&
-          !(u.name&&u.name===customer.name&&String(u.no||'')===String(customer.no||''))
-        );
-        await sSet(STOR+'cust-updates',filtered);
-        // GASチャンクも即時更新（revived状態をGASに書き込む）
-        // これをしないと次のpollUpdates時に古いcancel状態で上書きされる
-        const SAFE=n=>n.replace(/[^a-zA-Z0-9　-鿿゠-ヿ぀-ゟ]/g,'_').slice(0,30);
-        const cfIdx=await sGet(STOR+'cf-index');
-        if(!Array.isArray(cfIdx))return;
-        for(const fi of cfIdx){
-          const sn=SAFE(fi.name);
-          const chunkMeta=await sGet(STOR+'cf-'+sn+'-index');
-          if(!chunkMeta)continue;
-          for(let ci2=0;ci2<chunkMeta.chunks;ci2++){
-            const chunk=await sGet(STOR+'cf-'+sn+'-chunk-'+ci2);
-            if(!Array.isArray(chunk))continue;
-            let changed=false;
-            const newChunk=chunk.map(c=>{
-              const match=(customer.custId&&c.custId===customer.custId)||
-                          (c.name===customer.name&&String(c.no||'')===String(customer.no||''));
-              if(!match)return c;
-              changed=true;
-              return{...c,status:'none',entryDate:'',linkedInspDate:'',
-                bookingTime:'',course:'',tokuten:'',staff:'',note:''};
-            });
-            if(changed){
-              await sSet(STOR+'cf-'+sn+'-chunk-'+ci2,newChunk);
-              break;
-            }
-          }
-        }
-      }catch(e){console.error('handleRevive sync error:',e);}
-    })();
+    // cust-updatesからキャンセル通知を削除（ポーリングで再cancelされないよう）
+    sGet(STOR+'cust-updates').then(updates=>{
+      if(!Array.isArray(updates)||updates.length===0)return;
+      const filtered=updates.filter(u=>
+        !(u.custId&&u.custId===customer.custId)&&
+        !(u.name&&u.name===customer.name&&String(u.no||'')===String(customer.no||''))
+      );
+      if(filtered.length!==updates.length)sSet(STOR+'cust-updates',filtered);
+    }).catch(()=>{});
   },[]);
 
   const handleBookingSave=useCallback(async(form,customer)=>{
@@ -1329,6 +1300,13 @@ const App=()=>{
         return {...f,customers:custs};
       });
       filesRef.current = next; // filesRefを同期
+      // GASに保存してスケジュール切替後も青網掛けを維持
+      const _updFile=next.find(f=>f.customers?.some(c=>c.custId===customer.custId));
+      if(_updFile){
+        saveFileChunked(_updFile).catch(()=>{});
+        // localStorageキャッシュも即時更新（タブ切替後の上書きを防ぐ）
+        try{localStorage.setItem('hub-cf-'+SAFE(_updFile.name),JSON.stringify(_updFile));}catch(e){}
+      }
       return next;
     });
 
@@ -1369,12 +1347,6 @@ const App=()=>{
         if(courseNum===1){
           const mahCount=existingRows.filter(r=>Number(r.course)===1).length;
           if(mahCount>=2){needsApproval=true;}
-        }
-
-        // courseNum=0はExcelのコース列が未認識（保存を中止）
-        if(courseNum===0){
-          alert('⚠️ コースが認識できませんでした。\n顧客データのコース列を確認してください。\n（例：マッハ車検・クイック車検・レギュラー車検）');
-          return;
         }
 
         // 新しい予約を追加
@@ -1447,7 +1419,7 @@ const App=()=>{
 
           // 既存の同一custIdを削除
           for(const k of Object.keys(loanerRes)){
-            loanerRes[k]=(loanerRes[k]||[]).filter(r=>r.custId!==customer.custId);
+            const _days={...(loanerRes[k]||{})};Object.keys(_days).forEach(d=>{if(_days[d]?.custId===customer.custId)delete _days[d];});loanerRes[k]=_days;
           }
 
           const sorted=[...selDays].sort();
@@ -1459,24 +1431,51 @@ const App=()=>{
             custId:customer.custId,
             fy:s.getFullYear(),fm:s.getMonth(),fd:s.getDate(),
             ty:e.getFullYear(),tm:e.getMonth(),td:e.getDate(),
-            color:'#3b82f6',
+            color:null, // setLoanerResH/S 内で計算
             carName:car?.name||'',
             carNum:car?.num||'',
           };
-          if(!loanerRes[selCarId])loanerRes[selCarId]=[];
-          loanerRes[selCarId]=[...loanerRes[selCarId],newRes];
+          if(!loanerRes[selCarId])loanerRes[selCarId]={};
+          const _dKey=String(s.getDate());
+          loanerRes[selCarId]={...loanerRes[selCarId],[_dKey]:newRes};
 
+          // prev ベースでマージして保存（他の予約を消さない）
           if(carStore==='honten'){
-            setLoanerResH(loanerRes);
-            sSet(resKey,loanerRes);
+            setLoanerResH(prev=>{
+              const merged=JSON.parse(JSON.stringify(prev||{}));
+              // 同顧客の古いエントリをクリア
+              for(const k of Object.keys(merged)){
+                const days={...(merged[k]||{})};
+                Object.keys(days).forEach(d=>{if(days[d]?.custId===customer.custId)delete days[d];});
+                merged[k]=days;
+              }
+              // 新しいエントリを追加
+              if(!merged[selCarId])merged[selCarId]={};
+              // custIdのハッシュで色を決定（loanerResHの件数に依存しない）
+              const _ci=customer.custId?[...String(customer.custId)].reduce((a,c)=>a+c.charCodeAt(0),0)%RES_COLORS.length:0;
+              merged[selCarId]={...merged[selCarId],[String(s.getDate())]:{...newRes,color:RES_COLORS[_ci]}};
+              sSet(resKey,merged);
+              return merged;
+            });
           }else{
-            setLoanerResS(loanerRes);
-            sSet(resKey,loanerRes);
+            setLoanerResS(prev=>{
+              const merged=JSON.parse(JSON.stringify(prev||{}));
+              for(const k of Object.keys(merged)){
+                const days={...(merged[k]||{})};
+                Object.keys(days).forEach(d=>{if(days[d]?.custId===customer.custId)delete days[d];});
+                merged[k]=days;
+              }
+              if(!merged[selCarId])merged[selCarId]={};
+              const _ci=customer.custId?[...String(customer.custId)].reduce((a,c)=>a+c.charCodeAt(0),0)%RES_COLORS.length:0;
+              merged[selCarId]={...merged[selCarId],[String(s.getDate())]:{...newRes,color:RES_COLORS[_ci]}};
+              sSet(resKey,merged);
+              return merged;
+            });
           }
         }
       }
     }
-  },[inspData,loanerResH,loanerResS,loanerListH,loanerListS]);
+  },[loanerListH,loanerListS]);
 
   // 現在のファイルの顧客リスト
   const currentFile=files[activeIdx];
@@ -1489,9 +1488,9 @@ const App=()=>{
     if(search){
       const q=search.toLowerCase();
       list=list.filter(c=>
-        c.name.toLowerCase().includes(q)||
-        c.no.includes(q)||
-        c.carType.toLowerCase().includes(q)||
+        (c.name||'').toLowerCase().includes(q)||
+        String(c.no||'').includes(q)||
+        (c.carType||'').toLowerCase().includes(q)||
         (c.staff||'').includes(q)
       );
     }
