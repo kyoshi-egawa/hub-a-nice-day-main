@@ -7077,7 +7077,7 @@ function AppInner() {
       <style>{GCSS}</style>
 
       {/* -- ヘッダー -- */}
-      <header ref={headerRef} style={{background:'#EA580C',borderBottom:`3px solid ${vsStore.color}`,padding:'9px 18px',position:'fixed',top:0,left:0,right:0,zIndex:500,boxShadow:'0 4px 20px rgba(0,0,0,0.15)'}}>
+      <header ref={headerRef} style={{background:'#1e3a8a',borderBottom:`3px solid ${vsStore.color}`,padding:'9px 18px',position:'fixed',top:0,left:0,right:0,zIndex:500,boxShadow:'0 4px 20px rgba(0,0,0,0.15)'}}>
         {(()=>{
           const userStore=STORES.find(s=>s.id===(currentUser?.store?.id||'honten'))||STORES[0];
           return(
