@@ -1134,6 +1134,7 @@ const App=()=>{
         if(Array.isArray(fileIndex)&&fileIndex.length>0){
           localStorage.setItem('hub-cf-index',JSON.stringify(fileIndex));
           for(const fi of fileIndex){
+            if(__saveCount>0)continue; // 書き込み中はGASからの上書きをスキップ
             loadFileChunked(fi.name).then(f=>{
               if(f){
                 // GASキャッシュが古い場合でもローカルの予約状態を守る
