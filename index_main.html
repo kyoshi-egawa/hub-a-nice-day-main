@@ -2189,7 +2189,7 @@ const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopL
     const store=STORES.find(s=>s.id===deskSel.store)||STORES[0];
     const staffList=deskSel.store==='honten'?staffListH:staffListS;
     return(
-      <div style={{position:'fixed',inset:0,background:'linear-gradient(140deg,#7c2d12,#EA580C,#f97316)',display:'flex',alignItems:'flex-start',justifyContent:'center',fontFamily:'system-ui,sans-serif',padding:'24px 16px',overflowY:'auto',zIndex:9999}}>
+      <div style={{position:'fixed',inset:0,background:'linear-gradient(140deg,#1e3a8a,#1d4ed8,#2563eb)',display:'flex',alignItems:'flex-start',justifyContent:'center',fontFamily:'system-ui,sans-serif',padding:'24px 16px',overflowY:'auto',zIndex:9999}}>
         <div style={{background:'white',borderRadius:20,padding:'28px 32px',maxWidth:480,width:'100%',boxShadow:'0 30px 80px rgba(0,0,0,0.4)'}}>
           <div style={{textAlign:'center',marginBottom:20}}>
             <div style={{fontSize:36,marginBottom:4}}>🖥️</div>
@@ -2235,7 +2235,7 @@ const LoginScreen=({onLogin,staffListH,staffListS,onRegister,onSettings,desktopL
 
   // ステップ1：通常ログイン画面
   return (
-    <div style={{position:'fixed',inset:0,background:'linear-gradient(140deg,#7c2d12,#EA580C,#f97316)',display:'flex',alignItems:'flex-start',justifyContent:'center',fontFamily:'system-ui,sans-serif',padding:'24px 16px',overflowY:'auto',zIndex:9999}}>
+    <div style={{position:'fixed',inset:0,background:'linear-gradient(140deg,#1e3a8a,#1d4ed8,#2563eb)',display:'flex',alignItems:'flex-start',justifyContent:'center',fontFamily:'system-ui,sans-serif',padding:'24px 16px',overflowY:'auto',zIndex:9999}}>
       <div style={{background:'white',borderRadius:20,padding:'32px 36px',maxWidth:680,width:'100%',boxShadow:'0 30px 80px rgba(0,0,0,0.4)'}}>
         <div style={{textAlign:'center',marginBottom:24}}>
           <div style={{fontSize:44,marginBottom:6}}>🚗</div>
@@ -7112,11 +7112,11 @@ function AppInner() {
   const dayMemos=dk?memoData[dk]||[]:[];
 
   return (
-    <div style={{height:'100vh',overflow:'hidden',background:'linear-gradient(140deg,#7c2d12,#EA580C,#f97316)',fontFamily:'system-ui,-apple-system,sans-serif'}}>
+    <div style={{height:'100vh',overflow:'hidden',background:'linear-gradient(140deg,#1e3a8a,#1d4ed8,#2563eb)',fontFamily:'system-ui,-apple-system,sans-serif'}}>
       <style>{GCSS}</style>
 
       {/* -- ヘッダー -- */}
-      <header ref={headerRef} style={{background:'#EA580C',borderBottom:`3px solid ${vsStore.color}`,padding:'9px 18px',position:'fixed',top:0,left:0,right:0,zIndex:500,boxShadow:'0 4px 20px rgba(0,0,0,0.15)'}}>
+      <header ref={headerRef} style={{background:'linear-gradient(135deg,#1e3a8a,#1d4ed8)',borderBottom:`3px solid ${vsStore.color}`,padding:'9px 18px',position:'fixed',top:0,left:0,right:0,zIndex:500,boxShadow:'0 4px 20px rgba(0,0,0,0.15)'}}>
         {(()=>{
           const userStore=STORES.find(s=>s.id===(currentUser?.store?.id||'honten'))||STORES[0];
           return(
