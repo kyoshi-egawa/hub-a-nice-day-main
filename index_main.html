@@ -1523,9 +1523,11 @@ function useShared(key, def, pollMs=60000) {
           const localEntries = Object.values(localRef.current||{}).reduce((s,a)=>s+(Array.isArray(a)?a.filter(r=>r&&r.name).length:0),0);
           const newEntries   = Object.values(v||{}).reduce((s,a)=>s+(Array.isArray(a)?a.filter(r=>r&&r.name).length:0),0);
           if (newEntries < localEntries * 0.5) return; // 半分以上減ったらGASの不正レスポンスとして無視
-          // idベースマージ: ローカルの方が新しいエントリは保持
+          // idベースマージ: 値がオブジェクト（代車データ）の場合のみマージ、配列（車検データ）は単純上書き
           const local = localRef.current;
-          if (local && typeof local==='object' && !Array.isArray(local) &&
+          const firstVal = local && Object.values(local)[0];
+          const isArrayBased = Array.isArray(firstVal); // inspDataなど {dk:[entries]} 形式
+          if (!isArrayBased && local && typeof local==='object' && !Array.isArray(local) &&
               v   && typeof v   ==='object' && !Array.isArray(v)) {
             const mg = {...v};
             for (const cid of Object.keys(local)) {
