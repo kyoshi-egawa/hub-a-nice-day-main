@@ -1519,6 +1519,10 @@ function useShared(key, def, pollMs=60000) {
         const cur  = JSON.stringify(localRef.current);
         const next = JSON.stringify(v);
         if (cur !== next) {
+          // GASがキャッシュ切れ時に空データを返すことがある→総エントリ数チェック
+          const localEntries = Object.values(localRef.current||{}).reduce((s,a)=>s+(Array.isArray(a)?a.filter(r=>r&&r.name).length:0),0);
+          const newEntries   = Object.values(v||{}).reduce((s,a)=>s+(Array.isArray(a)?a.filter(r=>r&&r.name).length:0),0);
+          if (newEntries < localEntries * 0.5) return; // 半分以上減ったらGASの不正レスポンスとして無視
           // idベースマージ: ローカルの方が新しいエントリは保持
           const local = localRef.current;
           if (local && typeof local==='object' && !Array.isArray(local) &&
