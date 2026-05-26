@@ -5998,7 +5998,7 @@ function AppInner() {
     const onVisible=()=>{
       if(document.visibilityState==='visible'){
         // inspDataを即再取得
-        sGet(STOR+'insp').then(v=>{if(v&&typeof v==='object')setInspData(v);});
+        // visibilitychange時はuseSharedの自動ポーリング（3秒）に任せる（writeCountを増やさないため）
         // customers.htmlから戻ったとき店舗をログインユーザーに合わせて復元
         try{
           const saved=sessionStorage.getItem('hub_currentUser');
