@@ -1536,6 +1536,8 @@ function useShared(key, def, pollMs=60000) {
     sSet(key, next).then(() => {
       writeTimer.current = setTimeout(() => { writeCount.current = Math.max(0, writeCount.current - 1); }, 70000);
     }).catch(() => {
+      // sSet失敗時もwriteCountを減らす（永久ブロック防止）
+      writeCount.current = Math.max(0, writeCount.current - 1);
       setTimeout(() => sSet(key, localRef.current).catch(() => {}), 1500);
       writeTimer.current = setTimeout(() => { writeCount.current = Math.max(0, writeCount.current - 1); }, 72000);
     });
