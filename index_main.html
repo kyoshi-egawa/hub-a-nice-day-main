@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- fixed-holiday-1778028748861 force-deploy-1779849091489 -->
+<!-- fixed-holiday-1778028748861 force-deploy-1779952846382 -->
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
@@ -1515,7 +1515,7 @@ function useShared(key, def, pollMs=60000) {
     pollTimer.current = setInterval(() => {
       if (!mounted.current || !initialized.current || writeCount.current > 0) return;
       sGet(key).then(v => {
-        if (!mounted.current || v === null || writeCount.current > 0) return;
+        if (!mounted.current || v === null) return; // writeCountチェック削除: GAS書き込み中でもポーリング更新を許可
         // GASがキャッシュ切れ時に空データを返すことがある→総エントリ数チェック
         const localEntries = Object.values(localRef.current||{}).reduce((s,a)=>s+(Array.isArray(a)?a.filter(r=>r&&r.name).length:0),0);
         const newEntries   = Object.values(v||{}).reduce((s,a)=>s+(Array.isArray(a)?a.filter(r=>r&&r.name).length:0),0);
