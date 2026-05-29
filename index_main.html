@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- fixed-holiday-1778028748861 force-deploy-1779953535164 -->
+<!-- fixed-holiday-1778028748861 force-deploy-1780031498101 -->
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
@@ -1499,8 +1499,8 @@ function useShared(key, def, pollMs=60000) {
   useEffect(() => {
     mounted.current = true;
     sGet(key).then(v => {
-      if (!mounted.current) { console.log('[useShared] SKIP: unmounted, key='+key); return; }
-      if (v !== null) { localRef.current = v; setVal(v); console.log('[useShared] setVal called, key='+key+', has525='+(v['2026-5-25']!==undefined)); } // 初期ロードは常に反映
+      if (!mounted.current) return;
+      if (v !== null) { localRef.current = v; setVal(v); } // 初期ロードは常に反映
       initialized.current = true;
     }).catch(() => { initialized.current = true; });
     return () => {
