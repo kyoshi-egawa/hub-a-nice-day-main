@@ -1343,7 +1343,7 @@ const App=()=>{
           }
         }
         // 承認待ちチェック（index.htmlと同じ判定）
-        const existingRows=(newInspData[dkFormatted]||[]).filter(r=>r&&r.name&&r.course&&!r.pendingApproval&&r.bookingStatus!=='cancelled');
+        const existingRows=(newInspData[dkFormatted]||[]).filter(r=>r&&r.name&&r.course&&!r.pendingApproval&&r.bookingStatus!=='cancelled'&&r.bookingStatus!=='cancelled');
         const lim=(inspLimits&&inspLimits[dkFormatted])??6;
         const courseNum=Number(course)||0;
         let needsApproval=false;
