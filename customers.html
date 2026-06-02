@@ -548,6 +548,7 @@ const LoanerGrid=memo(({storeId,entryDate,loanerRes,loanerList,onSelect,selCarId
                       outline:sel?'2px solid #3b82f6':'none'}}
                     onMouseDown={()=>{
                       if(booked)return;
+                      if(sel){onSelect(null,[]);return;}
                       dragRef.current={dragging:true,carId:car.id,startKey:key,days:[key]};
                       onSelect(car.id,[key]);
                     }}
