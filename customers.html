@@ -1061,6 +1061,9 @@ const CustomerRow=memo(({customer,onBook,onRevive})=>{
   );
 });
 
+// 入庫日をGASキー形式（ゼロなし）に変換
+const toDk=d=>{if(!d)return'';const p=String(d).split('-');return p.length===3?`${p[0]}-${parseInt(p[1])}-${parseInt(p[2])}`:d;};
+
 // ═══════════════════════════════════════════
 // メインアプリ
 // ═══════════════════════════════════════════
@@ -1089,6 +1092,8 @@ const App=()=>{
   const [closedDates,setClosedDates]=useState([]);
   const [overrideOpen,setOverrideOpen]=useState([]);
   const [inspLimits,setInspLimits]=useState({});
+  const [syncDialog,setSyncDialog]=useState(null);
+  const [syncing,setSyncing]=useState(false);
   const fileInputRef=useRef();
 
   // GASからデータ取得
@@ -1516,6 +1521,68 @@ const App=()=>{
     }).catch(()=>{});
   },[loanerListH,loanerListS]);
 
+  const handleSyncCheck=useCallback(async()=>{
+    setSyncing(true);
+    try{
+      // GASから全ファイルとinspDataを直接取得（キャッシュ不使用）
+      const [latestInsp,fileIndex]=await Promise.all([
+        sGet(STOR+'insp').then(v=>v||{}),
+        sGet(STOR+'cf-index').then(v=>v||[]),
+      ]);
+      const allFiles=await Promise.all(fileIndex.map(fi=>loadFileChunked(fi.name).catch(()=>null)));
+      const allCusts=allFiles.filter(Boolean).flatMap(f=>f.customers||[]);
+      const confirmedWithDate=allCusts.filter(c=>c.status==='confirm'&&c.entryDate);
+      const missing=confirmedWithDate.filter(c=>{
+        const dk=toDk(c.entryDate);
+        if(!dk)return false;
+        // cancelledを除いた行で照合。custId一致 or 氏名一致（再インポートでcustIdが変わった場合の対策）
+        const activeRows=(latestInsp[dk]||[]).filter(r=>r&&r.bookingStatus!=='cancelled');
+        return!activeRows.some(r=>
+          (r.custId&&r.custId===c.custId)||
+          (r.name&&r.name===c.name)
+        );
+      });
+      setSyncDialog({missing,total:confirmedWithDate.length,latestInsp});
+    }catch(e){alert('GASからのデータ取得に失敗しました: '+(e.message||e));}
+    finally{setSyncing(false);}
+  },[]);
+
+  const handleSyncFix=useCallback(async()=>{
+    if(!syncDialog||syncDialog.missing.length===0)return;
+    setSyncing(true);
+    try{
+      let newInspData={...(await sGet(STOR+'insp')||{})};
+      let added=0;
+      for(const c of syncDialog.missing){
+        const dk=toDk(c.entryDate);
+        if(!dk)continue;
+        if(!Array.isArray(newInspData[dk]))newInspData[dk]=[];
+        // cancelledを除いた行で重複チェック（キャンセル後の再予約をブロックしない）
+        const activeRows=newInspData[dk].filter(r=>r&&r.bookingStatus!=='cancelled');
+        if(activeRows.some(r=>
+          (r.custId&&r.custId===c.custId)||
+          (r.name&&r.name===c.name)
+        ))continue;
+        const idx=newInspData[dk].length;
+        newInspData[dk]=[...newInspData[dk],{
+          name:c.name,carType:c.carType||'',
+          course:Number(c.course)||0,
+          store:c.store||'honten',staff:c.staff||'',
+          tokuten:c.tokuten||'-',note:c.note||'',no:c.no||'',
+          bookingStatus:'confirmed',pendingApproval:false,
+          custId:c.custId,bookingTime:c.bookingTime||'',time:c.bookingTime||'',
+          bookingKey:`insp-${dk}-${idx}`,
+        }];
+        added++;
+      }
+      await sSet(STOR+'insp',newInspData);
+      setInspData(newInspData);
+      inspWriteRef.current=Date.now();
+      setSyncDialog(prev=>({...prev,fixed:true,addedCount:added}));
+    }catch(e){alert('修復に失敗しました: '+(e.message||e));}
+    finally{setSyncing(false);}
+  },[syncDialog]);
+
   // 現在のファイルの顧客リスト
   const currentFile=files[activeIdx];
   const allCustomers=currentFile?.customers||[];
@@ -1642,7 +1709,15 @@ const App=()=>{
               </button>
             ))}
           </div>
-          <span style={{marginLeft:'auto',fontSize:11,color:'#94a3b8'}}>{filtered.length}件表示</span>
+          <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:8}}>
+            <button onClick={handleSyncCheck} disabled={syncing||gasLoading}
+              style={{padding:'5px 12px',borderRadius:20,border:'1.5px solid #f59e0b',
+                background:'#fffbeb',color:'#92400e',fontWeight:700,fontSize:11,cursor:'pointer',
+                opacity:(syncing||gasLoading)?0.6:1}}>
+              {syncing?'確認中...':'🔧 スケジュール同期チェック'}
+            </button>
+            <span style={{fontSize:11,color:'#94a3b8'}}>{filtered.length}件表示</span>
+          </div>
         </div>
 
         {/* ── テーブル ── */}
@@ -1669,6 +1744,73 @@ const App=()=>{
           </div>
         </div>
       </>)}
+
+      {/* ── スケジュール同期ダイアログ ── */}
+      {syncDialog&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+          <div style={{background:'white',borderRadius:16,padding:28,maxWidth:580,width:'100%',maxHeight:'80vh',display:'flex',flexDirection:'column',gap:16,boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
+            {syncDialog.fixed?(
+              <>
+                <div style={{fontWeight:800,fontSize:18,color:'#16a34a'}}>✅ 修復完了</div>
+                <div style={{fontSize:14,color:'#374151'}}>{syncDialog.addedCount}件をスケジュールに追加しました。</div>
+                <div style={{fontSize:12,color:'#6b7280'}}>スケジュール画面を開くと反映されています。</div>
+                <button onClick={()=>setSyncDialog(null)}
+                  style={{alignSelf:'flex-end',padding:'8px 24px',background:'#1d4ed8',color:'white',border:'none',borderRadius:8,fontWeight:700,cursor:'pointer'}}>
+                  閉じる
+                </button>
+              </>
+            ):syncDialog.missing.length===0?(
+              <>
+                <div style={{fontWeight:800,fontSize:18,color:'#16a34a'}}>✅ 問題ありません</div>
+                <div style={{fontSize:14,color:'#374151'}}>本予約・入庫日あり {syncDialog.total}件すべてがスケジュールに反映されています。</div>
+                <button onClick={()=>setSyncDialog(null)}
+                  style={{alignSelf:'flex-end',padding:'8px 24px',background:'#1d4ed8',color:'white',border:'none',borderRadius:8,fontWeight:700,cursor:'pointer'}}>
+                  閉じる
+                </button>
+              </>
+            ):(
+              <>
+                <div style={{fontWeight:800,fontSize:18,color:'#dc2626'}}>⚠️ {syncDialog.missing.length}件の反映漏れを検出</div>
+                <div style={{fontSize:13,color:'#6b7280'}}>入庫日あり・本予約ステータスだが、スケジュールへの反映が確認できない顧客です。（全{syncDialog.total}件中）</div>
+                <div style={{overflowY:'auto',flex:1,border:'1px solid #e5e7eb',borderRadius:8}}>
+                  <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                    <thead>
+                      <tr>
+                        {['氏名','No.','入庫日','コース','店舗'].map(h=>(
+                          <th key={h} style={{padding:'6px 10px',background:'#f8fafc',fontWeight:700,textAlign:'left',borderBottom:'1px solid #e5e7eb',position:'sticky',top:0}}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {syncDialog.missing.map((c,i)=>(
+                        <tr key={c.custId||i} style={{borderBottom:'1px solid #f1f5f9',background:i%2?'#f8fafc':'white'}}>
+                          <td style={{padding:'5px 10px',fontWeight:600}}>{c.name}</td>
+                          <td style={{padding:'5px 10px',color:'#6b7280'}}>{c.no}</td>
+                          <td style={{padding:'5px 10px',fontWeight:700,color:'#1d4ed8'}}>{c.entryDate}</td>
+                          <td style={{padding:'5px 10px'}}>{c.course||'—'}</td>
+                          <td style={{padding:'5px 10px'}}>{c.store==='sanda'?'三田店':'本店'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{display:'flex',gap:10,justifyContent:'flex-end',flexShrink:0}}>
+                  <button onClick={()=>setSyncDialog(null)}
+                    style={{padding:'8px 20px',background:'#f1f5f9',color:'#374151',border:'1px solid #e5e7eb',borderRadius:8,fontWeight:700,cursor:'pointer'}}>
+                    キャンセル
+                  </button>
+                  <button onClick={handleSyncFix} disabled={syncing}
+                    style={{padding:'8px 24px',background:'#dc2626',color:'white',border:'none',borderRadius:8,fontWeight:700,cursor:'pointer',opacity:syncing?0.6:1}}>
+                    {syncing?'修復中...':'スケジュールに追加する'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── 予約モーダル ── */}
       {bookingModal&&(
