@@ -1552,12 +1552,13 @@ const App=()=>{
     setSyncing(true);
     try{
       let newInspData={...(await sGet(STOR+'insp')||{})};
+      const sizeBefore=JSON.stringify(newInspData).length;
       let added=0;
+      const toAdd=[];
       for(const c of syncDialog.missing){
         const dk=toDk(c.entryDate);
         if(!dk)continue;
         if(!Array.isArray(newInspData[dk]))newInspData[dk]=[];
-        // cancelledを除いた行で重複チェック（キャンセル後の再予約をブロックしない）
         const activeRows=newInspData[dk].filter(r=>r&&r.bookingStatus!=='cancelled');
         if(activeRows.some(r=>
           (r.custId&&r.custId===c.custId)||
@@ -1573,12 +1574,26 @@ const App=()=>{
           custId:c.custId,bookingTime:c.bookingTime||'',time:c.bookingTime||'',
           bookingKey:`insp-${dk}-${idx}`,
         }];
+        toAdd.push({c,dk});
         added++;
       }
+      const sizeAfter=Math.round(JSON.stringify(newInspData).length/1024);
+      const sizeBeforeKB=Math.round(sizeBefore/1024);
       await sSet(STOR+'insp',newInspData);
-      setInspData(newInspData);
-      inspWriteRef.current=Date.now();
-      setSyncDialog(prev=>({...prev,fixed:true,addedCount:added}));
+
+      // sSetはno-corsのため成否不明。3秒後に読み返して確認する
+      await new Promise(r=>setTimeout(r,3000));
+      const readBack=await sGet(STOR+'insp')||{};
+      const verified=toAdd.filter(({c,dk})=>{
+        const rows=(readBack[dk]||[]).filter(r=>r&&r.bookingStatus!=='cancelled');
+        return rows.some(r=>(r.custId&&r.custId===c.custId)||(r.name&&r.name===c.name));
+      }).length;
+      const writeOk=toAdd.length>0&&verified===toAdd.length;
+
+      setInspData(writeOk?readBack:newInspData);
+      if(writeOk)inspWriteRef.current=Date.now();
+      setSyncDialog(prev=>({...prev,fixed:true,addedCount:added,writeOk,verified,
+        diagMsg:`データサイズ: ${sizeBeforeKB}KB → ${sizeAfter}KB（追加${added}件・確認${verified}件）`}));
     }catch(e){alert('修復に失敗しました: '+(e.message||e));}
     finally{setSyncing(false);}
   },[syncDialog]);
@@ -1750,15 +1765,31 @@ const App=()=>{
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
           <div style={{background:'white',borderRadius:16,padding:28,maxWidth:580,width:'100%',maxHeight:'80vh',display:'flex',flexDirection:'column',gap:16,boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
             {syncDialog.fixed?(
-              <>
-                <div style={{fontWeight:800,fontSize:18,color:'#16a34a'}}>✅ 修復完了</div>
-                <div style={{fontSize:14,color:'#374151'}}>{syncDialog.addedCount}件をスケジュールに追加しました。</div>
-                <div style={{fontSize:12,color:'#6b7280'}}>スケジュール画面を開くと反映されています。</div>
-                <button onClick={()=>setSyncDialog(null)}
-                  style={{alignSelf:'flex-end',padding:'8px 24px',background:'#1d4ed8',color:'white',border:'none',borderRadius:8,fontWeight:700,cursor:'pointer'}}>
-                  閉じる
-                </button>
-              </>
+              syncDialog.writeOk?(
+                <>
+                  <div style={{fontWeight:800,fontSize:18,color:'#16a34a'}}>✅ 修復完了・GAS保存確認</div>
+                  <div style={{fontSize:14,color:'#374151'}}>{syncDialog.addedCount}件をスケジュールに追加しました。</div>
+                  <div style={{fontSize:12,color:'#6b7280'}}>{syncDialog.diagMsg}</div>
+                  <div style={{fontSize:12,color:'#6b7280'}}>スケジュール画面を強制リロードすると反映されます。</div>
+                  <button onClick={()=>setSyncDialog(null)}
+                    style={{alignSelf:'flex-end',padding:'8px 24px',background:'#1d4ed8',color:'white',border:'none',borderRadius:8,fontWeight:700,cursor:'pointer'}}>
+                    閉じる
+                  </button>
+                </>
+              ):(
+                <>
+                  <div style={{fontWeight:800,fontSize:18,color:'#f59e0b'}}>⚠️ GASへの保存が確認できません</div>
+                  <div style={{fontSize:13,color:'#374151'}}>{syncDialog.addedCount}件追加を試みましたが、3秒後の読み返しで{syncDialog.verified}件しか確認できませんでした。</div>
+                  <div style={{fontSize:12,color:'#6b7280',background:'#fef9c3',padding:'8px 12px',borderRadius:6,border:'1px solid #fde047'}}>
+                    <b>診断情報:</b> {syncDialog.diagMsg}<br/>
+                    GASスクリプトのエラーログを確認してください。データサイズが大きい場合はGASのプロパティ制限（9KB/件）に達している可能性があります。
+                  </div>
+                  <button onClick={()=>setSyncDialog(null)}
+                    style={{alignSelf:'flex-end',padding:'8px 24px',background:'#6b7280',color:'white',border:'none',borderRadius:8,fontWeight:700,cursor:'pointer'}}>
+                    閉じる
+                  </button>
+                </>
+              )
             ):syncDialog.missing.length===0?(
               <>
                 <div style={{fontWeight:800,fontSize:18,color:'#16a34a'}}>✅ 問題ありません</div>
