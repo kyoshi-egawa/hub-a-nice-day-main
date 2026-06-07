@@ -706,7 +706,7 @@ function InspCalendarPicker({value,onChange,inspData,closedDays,closedDates,insp
 }
 
 
-const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerListS,onSave,onClose,currentUser,closedDays,closedDates,overrideOpen,inspLimits})=>{
+const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerListS,onSave,onClose,currentUser,closedDaysH,closedDaysS,closedDatesH,closedDatesS,overrideOpen,inspLimits})=>{
   const normStore=s=>{if(!s)return'honten';if(s==='三田店'||s==='sanda')return'sanda';return'honten';};
   const defaultStaff=customer.staff||currentUser?.name||'';
   // デフォルト店舗: 顧客の店舗 > ログインユーザーの店舗 > 本店
@@ -748,6 +748,8 @@ const BookingModal=({customer,inspData,loanerResH,loanerResS,loanerListH,loanerL
   const dynListH=(loanerListH&&loanerListH.length>0)?loanerListH:LOANERS_H;
   const dynListS=(loanerListS&&loanerListS.length>0)?loanerListS:LOANERS_S;
   const loanerRes=form.store==='honten'?loanerResH:loanerResS;
+  const closedDays=form.store==='honten'?closedDaysH:closedDaysS;
+  const closedDates=form.store==='honten'?closedDatesH:closedDatesS;
   const storeObj=STORES.find(s=>s.id===form.store)||STORES[0];
   const upd=k=>e=>setForm(p=>({...p,[k]:typeof e==='object'&&e.target?e.target.value:e}));
 
@@ -1088,8 +1090,10 @@ const App=()=>{
   const [loanerListH,setLoanerListH]=useState([]);
   const [loanerListS,setLoanerListS]=useState([]);
   const [bookingModal,setBookingModal]=useState(null);
-  const [closedDays,setClosedDays]=useState([]);
-  const [closedDates,setClosedDates]=useState([]);
+  const [closedDaysH,setClosedDaysH]=useState([]);
+  const [closedDaysS,setClosedDaysS]=useState([3]);
+  const [closedDatesH,setClosedDatesH]=useState([]);
+  const [closedDatesS,setClosedDatesS]=useState([]);
   const [overrideOpen,setOverrideOpen]=useState([]);
   const [inspLimits,setInspLimits]=useState({});
   const [syncDialog,setSyncDialog]=useState(null);
@@ -1117,7 +1121,7 @@ const App=()=>{
       }
       // GASから最新データをバックグラウンドで取得
       try{
-        const [insp,lh,ls,fileIndex,llh,lls,cdh,cdate,ov,ilim]=await Promise.all([
+        const [insp,lh,ls,fileIndex,llh,lls,cdh,cdate,ov,ilim,cdhS,cdateS]=await Promise.all([
           sGet(STOR+'insp'),
           sGet(storKey('lres','honten')),
           sGet(storKey('lres','sanda')),
@@ -1128,6 +1132,8 @@ const App=()=>{
           sGet(storKey('cdate','honten')),
           sGet(storKey('overrideOpen','honten')),
           sGet(STOR+'insp-limits'),
+          sGet(storKey('cdow-v2','sanda')),
+          sGet(storKey('cdate','sanda')),
         ]);
         // 書き込み後5秒以内はGASからの上書きをしない（ローカル更新を保護）
         if(insp&&(Date.now()-inspWriteRef.current)>8000)setInspData(insp);
@@ -1135,8 +1141,10 @@ const App=()=>{
         if(ls)setLoanerResS(ls);
         if(Array.isArray(llh)&&llh.length>0)setLoanerListH(llh);
         if(Array.isArray(lls)&&lls.length>0)setLoanerListS(lls);
-        if(Array.isArray(cdh))setClosedDays(cdh);
-        if(Array.isArray(cdate))setClosedDates(cdate);
+        if(Array.isArray(cdh))setClosedDaysH(cdh);
+        if(Array.isArray(cdate))setClosedDatesH(cdate);
+        if(Array.isArray(cdhS))setClosedDaysS(cdhS);
+        if(Array.isArray(cdateS))setClosedDatesS(cdateS);
         if(Array.isArray(ov))setOverrideOpen(ov);
         if(ilim&&typeof ilim==='object')setInspLimits(ilim);
         // GASから最新ファイルデータを取得してキャッシュ更新
@@ -1403,14 +1411,14 @@ const App=()=>{
         newInspData[dkFormatted][newIdx]={...newRow,bookingKey:bKey};
         setInspData(newInspData);
         inspWriteRef.current=Date.now(); // 書き込み時刻を記録
-        // GAS保存とファイル保存を並列で実行（awaitしない→モーダルを即閉じ）
-        // GASへの保存（完了後にinspWriteRefを更新して保護を延長）
-        Promise.all([
-          sSet(STOR+'insp',newInspData),
-          changedFile?saveFileChunked(changedFile):Promise.resolve(),
-        ]).then(()=>{
+        // GAS保存を完了まで待つ（awaitしないとページ遷移で書き込みが中断され反映漏れする）
+        try{
+          await Promise.all([
+            sSet(STOR+'insp',newInspData),
+            changedFile?saveFileChunked(changedFile):Promise.resolve(),
+          ]);
           inspWriteRef.current=Date.now(); // 保存完了後に再度更新（保護延長）
-        }).catch(e=>console.error('保存エラー:',e));
+        }catch(e){console.error('保存エラー:',e);}
 
         // 4. custbk（カレンダー6枠）にも保存
         // キー形式: "氏名::2026-3-16"（ゼロなし）
@@ -1848,8 +1856,10 @@ const App=()=>{
         <BookingModal
           customer={bookingModal}
           inspData={inspData}
-          closedDays={closedDays}
-          closedDates={closedDates}
+          closedDaysH={closedDaysH}
+          closedDaysS={closedDaysS}
+          closedDatesH={closedDatesH}
+          closedDatesS={closedDatesS}
           overrideOpen={overrideOpen}
           inspLimits={inspLimits}
           loanerResH={loanerResH}
