@@ -84,7 +84,7 @@ const saveFilesIndex=async(files)=>{
 };
 const deleteFileFromCache=(file)=>{
   const sn=safeName(file.name);
-  try{localStorage.removeItem('hub-cf-'+sn);}catch(e){}
+  try{localStorage.removeItem(STOR+'cf-'+sn);}catch(e){}
 };
 const RES_COLORS=['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ec4899','#06b6d4','#f97316','#e11d48','#14b8a6','#a855f7'];
 
@@ -1105,12 +1105,12 @@ const App=()=>{
     (async()=>{
       // まずlocalStorageキャッシュから即座に表示（GASを待たない）
       const SAFE=n=>n.replace(/[^a-zA-Z0-9　-鿿゠-ヿ぀-ゟ]/g,'_').slice(0,30);
-      const cachedIndex=localStorage.getItem('hub-cf-index');
+      const cachedIndex=localStorage.getItem(STOR+'cf-index');
       if(cachedIndex){
         try{
           const cidx=JSON.parse(cachedIndex);
           const cached=cidx.map(fi=>{
-            const d=localStorage.getItem('hub-cf-'+SAFE(fi.name));
+            const d=localStorage.getItem(STOR+'cf-'+SAFE(fi.name));
             return d?JSON.parse(d):null;
           }).filter(Boolean);
           if(cached.length>0){
@@ -1149,7 +1149,7 @@ const App=()=>{
         if(ilim&&typeof ilim==='object')setInspLimits(ilim);
         // GASから最新ファイルデータを取得してキャッシュ更新
         if(Array.isArray(fileIndex)&&fileIndex.length>0){
-          localStorage.setItem('hub-cf-index',JSON.stringify(fileIndex));
+          localStorage.setItem(STOR+'cf-index',JSON.stringify(fileIndex));
           for(const fi of fileIndex){
             if(__saveCount>0)continue; // 書き込み中はGASからの上書きをスキップ
             loadFileChunked(fi.name).then(f=>{
@@ -1169,10 +1169,10 @@ const App=()=>{
                       const fp=priority[fc.status||'none']||0;
                       return lp>=fp?lc:fc;
                     })};
-                    localStorage.setItem('hub-cf-'+SAFE(fi.name),JSON.stringify(merged));
+                    localStorage.setItem(STOR+'cf-'+SAFE(fi.name),JSON.stringify(merged));
                     return prev.map(p=>p.name===f.name?merged:p);
                   }
-                  localStorage.setItem('hub-cf-'+SAFE(fi.name),JSON.stringify(f));
+                  localStorage.setItem(STOR+'cf-'+SAFE(fi.name),JSON.stringify(f));
                   return [...prev,f];
                   const i=prev.findIndex(x=>x.name===f.name);
                   if(i>=0){const n=[...prev];n[i]=f;return n;}
@@ -1348,7 +1348,7 @@ const App=()=>{
       if(_updFile){
         saveFileChunked(_updFile).catch(()=>{});
         // localStorageキャッシュも即時更新（タブ切替後の上書きを防ぐ）
-        try{localStorage.setItem('hub-cf-'+SAFE(_updFile.name),JSON.stringify(_updFile));}catch(e){}
+        try{localStorage.setItem(STOR+'cf-'+SAFE(_updFile.name),JSON.stringify(_updFile));}catch(e){}
       }
       return next;
     });
