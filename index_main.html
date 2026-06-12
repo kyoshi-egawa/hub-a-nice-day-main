@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- fixed-holiday-1778028748861 force-deploy-1781223972035 -->
+<!-- fixed-holiday-1778028748861 force-deploy-1781238523633 -->
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
@@ -5460,9 +5460,12 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
         const getRState=(carId,dateObj)=>{
           const {year,month,day}=dateObj;
           const dn=toNum(year,month,day);
-          const resList=rentalResLocal[carId]||[];
+          // rresはオブジェクト構造{key:予約}が正（旧データは配列）。両対応で配列化してから走査
+          // （本番データで「resList is not iterable」クラッシュが出た箇所。配列前提にしないこと）
+          const raw=rentalResLocal[carId]||[];
+          const resList=Array.isArray(raw)?raw:Object.values(raw||{});
           for(const r of resList){
-            if(dn>=toNum(r.fy,r.fm,r.fd)&&dn<=toNum(r.ty,r.tm,r.td))return r;
+            if(r&&dn>=toNum(r.fy,r.fm,r.fd)&&dn<=toNum(r.ty,r.tm,r.td))return r;
           }
           return null;
         };
@@ -7406,7 +7409,6 @@ function AppInner() {
         {exportStatus==='ok'&&(<div style={{position:'fixed',top:70,right:20,zIndex:9999,background:'#0891b2',color:'white',borderRadius:10,padding:'12px 18px',fontSize:13,fontWeight:700,boxShadow:'0 4px 20px rgba(0,0,0,0.25)',maxWidth:320}}>✓ クリップボードにコピーしました<br/><span style={{fontWeight:400,fontSize:11,opacity:0.9}}>メモ帳を開いて「Ctrl+V」で貼り付け→名前をつけて保存</span></div>)}
         {exportStatus==='err'&&(<div style={{position:'fixed',top:70,right:20,zIndex:9999,background:'#dc2626',color:'white',borderRadius:10,padding:'12px 18px',fontSize:13,fontWeight:700,boxShadow:'0 4px 20px rgba(0,0,0,0.25)'}}>✕ コピーに失敗しました<br/><span style={{fontWeight:400,fontSize:11,opacity:0.9}}>ブラウザのクリップボード権限を確認してください</span></div>)}
       </header>
-
       
 
       <main style={{maxWidth:1700,margin:'0 auto',
