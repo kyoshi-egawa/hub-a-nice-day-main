@@ -13,20 +13,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - デプロイ = `git push`。GitHub Pages反映に1〜3分。
 - コード変更後の検証は、ブラウザで開いて操作する以外に手段がない（自動テスト基盤なし）。Babelのin-browser変換のため、構文エラーは実行時まで出ない。
 
-## リポジトリ構成（本番とDEVは別リポジトリ）
+## リポジトリ構成（DEVと本番は別リポジトリ）
 
-| | 本番（このリポジトリ） | DEV |
+| | DEV（このリポジトリ） | 本番 |
 |---|---|---|
-| パス | `C:\Users\A\hub-a-nice-day` | `C:\Users\A\HUB-A-NICE-DAY-DEV` |
-| GitHub | `kyoshi-egawa/hub-a-nice-day-main`（旧 `hub-a-nice-day` からリダイレクト） | `kyoshi-egawa/HUB-A-NICE-DAY-DEV` |
-| STORプレフィックス | `hub-v8-` | `hub-v8-dev-` |
-| スケジュール本体 | `index_main.html`（`index.html`がリダイレクト） | `index_dev.html`（`index.html`がリダイレクト） |
+| パス | `C:\Users\A\HUB-A-NICE-DAY-DEV` | `C:\Users\A\hub-a-nice-day` |
+| GitHub | `kyoshi-egawa/HUB-A-NICE-DAY-DEV` | `kyoshi-egawa/hub-a-nice-day-main`（旧 `hub-a-nice-day` からリダイレクト） |
+| STORプレフィックス | `hub-v8-dev-` | `hub-v8-` |
+| スケジュール本体 | `index_dev.html`（`index.html`がリダイレクト） | `index_main.html`（`index.html`がリダイレクト） |
 | 顧客リスト | `customers.html` | `customers.html` |
 
-- **`index.html` は中身がなく `index_main.html` / `index_dev.html` へ `location.replace` するだけ。** 実装は `index_main.html`（本番）/ `index_dev.html`（DEV）にある。
-- 本番とDEVでファイルが**乖離している**ことがある（片方だけ修正されたまま）。**片方を直したら必ずもう片方も確認すること。** 過去に useShared のマージロジックがDEVだけ新しく、本番で代車が消えるバグが出た。
-- `customers_dev.html` / `index_redirect_*.html` は実験用サブファイル。ユーザーが日常使うのは `customers.html` と `index_main.html`（DEVは `index_dev.html`）。
-- **GAS_URL と GAS_API_KEY は 本番・DEV で同一**。同じGASスクリプト・同じスプレッドシートを共有し、`STOR` プレフィックスだけでデータを分離している（例: `hub-v8-insp` vs `hub-v8-dev-insp`）。localStorageキャッシュキーも必ず `STOR` を前置すること（同一オリジンで本番/DEVが混ざるため）。
+- **`index.html` は中身がなく `index_dev.html` / `index_main.html` へ `location.replace` するだけ。** 実装は `index_dev.html`（DEV）/ `index_main.html`（本番）にある。
+- DEVと本番でファイルが**乖離している**ことがある（片方だけ修正されたまま）。**片方を直したら必ずもう片方も確認すること。** 過去に useShared のマージロジックがDEVだけ新しく、本番で代車が消えるバグが出た。
+- `customers_dev.html` / `index_redirect_dev.html` は実験用サブファイル。ユーザーが日常使うのは `customers.html` と `index_dev.html`（本番は `index_main.html`）。
+- **GAS_URL と GAS_API_KEY は DEV・本番で同一**。同じGASスクリプト・同じスプレッドシートを共有し、`STOR` プレフィックスだけでデータを分離している（例: `hub-v8-insp` vs `hub-v8-dev-insp`）。localStorageキャッシュキーも必ず `STOR` を前置すること（同一オリジンでDEV/本番が混ざるため）。
+
+## DEV→本番の移植は必ず port_to_main.js を使う
+
+- DEVリポジトリで `node port_to_main.js` を実行すると、`index_dev.html` → `../hub-a-nice-day/index_main.html`、`customers.html` → 同名 をコピーし、環境固有差分を自動変換する。**手動コピー＋手動置換で移植しないこと**（2026-06-12、手動移植でDEVのオレンジ配色が本番に混入した事故あり）。
+- 環境固有差分は4種類：① `STOR`（`hub-v8-dev-` ↔ `hub-v8-`）② タイトルの `[DEV]` ③「⚠ テスト版（DEV）」バッジ ④ **配色**（DEV＝オレンジ背景・グレー戻るボタン／本番＝青背景・緑戻るボタン）。スクリプトが全変換し、パターン未検出（DEV側コードの乖離）やDEV残骸の検出時は中断する。
+- スクリプトが ✖ で中断したら、DEV側の該当コードが変わってルールが古くなった合図。`port_to_main.js` のルールを現状に合わせて更新してから再実行する。
+- 移植後の確認：本番ファイルをブラウザで開いて「**青ヘッダー・[DEV]表記なし**」を確認 → 本番リポジトリで commit & push。
 
 ## index_*.html 内のBLOCK制約（最重要）
 
@@ -53,7 +60,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `loanerRes[carId]` / `rentalRes[carId]` は `{ key: 予約 }` のオブジェクト。`.filter`/`.map`/`.find` を直接呼ぶと `TypeError`。必ず `Object.values(loanerRes[carId]||{})` で配列化してから使う。各予約は日付フィールド `fy/fm/fd`（from）・`ty/tm/td`（to）で期間を表す（`fm`/`tm` は0始まりの月）。
 
 ### GAS側（スプレッドシート + ドライブ）
-GASサーバーコードの控えはDEVリポジトリの `GAS_server_v9_drive.gs`（実体はGoogle Apps Script側にデプロイ済み）。重要な制約と設計：
+GASサーバーコードはリポジトリ内の `GAS_server_v9_drive.gs`（控え。実体はGoogle Apps Script側にデプロイ済み）。重要な制約と設計：
 - **1セルの上限は50,000文字。** これを超えると `setValue` が失敗する（no-corsのためフロントは失敗を検知できない）。
 - v9以降、**30,000字超の値はGoogleドライブのファイル**（`hubdata_blobs` フォルダ）に保存し、シートにはマーカー `__DRIVEFILE__` だけ置く。`doGet`/`doPost` が透過的に処理するのでフロントは無変更。
 - シートに巨大セルがあると、そのシートへの全書き込みが極端に遅くなる（小データでも10秒超）。大きいデータは必ずドライブへ逃がす。
@@ -65,6 +72,6 @@ GASサーバーコードの控えはDEVリポジトリの `GAS_server_v9_drive.g
 
 ## コミット規約
 
-- 機能変更は 本番 と DEV の両リポジトリに反映する（ユーザーが両方を運用しているため）。`git -C <path>` で各リポジトリを操作。
+- 機能変更は DEV と本番の両リポジトリに反映する（ユーザーが両方を運用しているため）。`git -C <path>` で各リポジトリを操作。
 - 日本語コミットメッセージで可。
 - GASコードをチャットからコピーさせると全角文字が化けて構文エラーになることがある。控えの `.gs` ファイルをメモ帳で開かせてコピーさせると確実。
