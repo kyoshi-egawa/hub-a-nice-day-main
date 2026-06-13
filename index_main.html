@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- fixed-holiday-1778028748861 force-deploy-1781238523633 -->
+<!-- fixed-holiday-1778028748861 force-deploy-1781335500033 -->
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
@@ -1308,7 +1308,9 @@ const blankInsp  = () => ({name:'',staff:'',carType:'',course:0,loaner:'',loaner
 // 各insp行の seq（予約順。新規予約時に Date.now() で付与）で昇順に並べ、
 //   先着 limit 台 = 確定 / 超過分 = 承認待ち(pendingApproval=true)。
 //   レギュラー車検(course=3) は別途1日3台まで（超過分は承認待ち）。
-//   手動承認済み(approved=true) は常に確定として扱い、枠を消費する。
+// 承認は「予約に固定されず枠に紐づく」: 先着枠内に入った行は承認待ち・手動承認(approved)とも
+//   外して通常確定にする（キャンセル等で6台以内に繰り上がれば承認バッジは消える）。
+//   枠外でも本店が手動承認(approved)した行だけは確定維持（承認済みバッジ）。
 // seq の無い旧データは配列インデックス順（＝従来の並び）にフォールバックするので、
 // 既存予約の並び・確定状態は変わらない。表示順(店舗優先・入庫時間)とは独立。
 const recomputeInspApproval = (rows, limit) => {
@@ -1325,17 +1327,17 @@ const recomputeInspApproval = (rows, limit) => {
   let conf = 0, reg = 0;
   for (const { r } of active) {
     const isReg = Number(r.course) === 3;
-    if (r.approved) {                 // 本店が手動承認済み → 常に確定（枠を消費）
-      delete r.pendingApproval;
-      conf++; if (isReg) reg++;
-      continue;
-    }
+    // seq順で先着枠（通常lim台・レギュラー3台）に入れるかを純粋に位置で判定
     const eligible = (conf < lim) && (!isReg || reg < 3);
     if (eligible) {
       delete r.pendingApproval;       // 先着枠内 → 確定
+      delete r.approved;              // 枠内に繰り上がった → 手動承認も解除（承認バッジを消す）
+      conf++; if (isReg) reg++;
+    } else if (r.approved) {
+      delete r.pendingApproval;       // 枠外だが手動承認済み → 確定維持（枠を消費）
       conf++; if (isReg) reg++;
     } else {
-      r.pendingApproval = true;       // 上限超過 → 承認待ち
+      r.pendingApproval = true;       // 枠外・未承認 → 承認待ち
     }
   }
   return out;
@@ -1551,6 +1553,9 @@ function useShared(key, def, pollMs=60000) {
     if (!GAS_READY) return;
     pollTimer.current = setInterval(() => {
       if (!mounted.current || !initialized.current) return; // writeCountチェック削除済み
+      // ★非表示タブはポーリング停止（GAS同時実行数の負荷軽減。2026-06-13 Kyoshi承認のBLOCK-B変更）
+      //   画面復帰時はvisibilitychangeハンドラがinspを即時再取得し、他キーも次のポーリングで追いつく
+      if (document.visibilityState === 'hidden') return;
       sGet(key).then(v => {
         if (!mounted.current || v === null || writeCount.current > 0) return;
         const cur  = JSON.stringify(localRef.current);
@@ -3040,7 +3045,7 @@ const StaffCalendarModal=memo(({isOpen,onClose,initMonth,currentUser,
           {/* 月ナビ */}
           <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:14,marginBottom:12}}>
             <button onClick={()=>setCalMonth(new Date(cy,cm-1,1))} style={NAV_S}><ChevronLeft size={16}/></button>
-            <span style={{fontWeight:800,fontSize:17,color:'white'}}>{cy}年{cm+1}月</span>
+            <span style={{fontWeight:800,fontSize:17,color:'#1f2937'}}>{cy}年{cm+1}月</span>
             <button onClick={()=>setCalMonth(new Date(cy,cm+1,1))} style={NAV_S}><ChevronRight size={16}/></button>
           </div>
 
@@ -3708,7 +3713,7 @@ const BookingModal=memo(({isOpen,onClose,type,initialData,isNew,dateLabel,timeSl
         {/* パネルヘッダー */}
         <div style={{background:isInsp?'linear-gradient(135deg,#9a3412,#ea580c)':'linear-gradient(135deg,#0e7490,#0891b2)',padding:'16px 20px',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,zIndex:20}}>
           <div>
-            <div style={{color:'white',fontWeight:800,fontSize:16}}>{isInsp?'🚗 車検予約':'📋 一般予約'}</div>
+            <div style={{color:'white',fontWeight:800,fontSize:16}}>{isInsp?'🚗 車検予約カード':'📋 一般予約カード'}</div>
             <div style={{color:'rgba(255,255,255,0.75)',fontSize:12,marginTop:2,position:'relative'}}>
               {(!isNew&&isInsp)?(<span onClick={()=>{if(!pickerMonth){const m=dateLabel.match(/(\d+)月(\d+)日/),now=new Date();setPickerMonth({year:now.getFullYear(),month:m?parseInt(m[1])-1:now.getMonth()});}setShowDatePicker(p=>!p);}} style={{cursor:'pointer',borderBottom:'1px dashed rgba(255,255,255,0.6)',paddingBottom:1}} title="クリックで日付変更">{dateLabel}</span>):dateLabel}
               {timeSlot?` / ${timeSlot}`:''}
@@ -5195,7 +5200,7 @@ const LoanerGrid=memo(({loanerRes,loanerMonth,setLoanerMonth,onAddRes,onDeleteRe
     <div>
       {/* ヘッダー */}
       <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:6,flexWrap:'wrap',flexShrink:0}}>
-        <button onClick={onBack} style={BACK_S}><ChevronLeft size={16}/>{pickMode?'モーダルに戻る':'カレンダーへ'}</button>
+        <button onClick={onBack} style={BACK_S}><ChevronLeft size={16}/>{pickMode?'予約カードに戻る':'カレンダーへ'}</button>
         <h2 style={{fontSize:18,fontWeight:800,color:'#7c2d12',margin:0}}>
           🚗 代車管理
           {!pickMode&&<span style={{fontSize:12,color:'#6b7280',marginLeft:8,fontWeight:500}}>（閲覧専用）</span>}
@@ -5838,10 +5843,10 @@ function AppInner() {
   const [schedCollapsed,setSchedCollapsed]=useState(false); // スケジュール畳む/開く（デフォルト：開く）
 
   // 車検は両店舗共通
-  const [inspData,   setInspData, updateLocalInspData]  =useShared(STOR+'insp',{},3000);
+  const [inspData,   setInspData, updateLocalInspData]  =useShared(STOR+'insp',{},6000);
   // 顧客リストからの仮予約（スケジュール未登録）専用ストレージ
   // キー: "名前::YYYY-M-D"  値: {status:'provisional', formData:{...}, custMonth, custRowIdx, savedAt}
-  const [custBookings, setCustBookings]=useShared(STOR+'custbk',{},3000);
+  const [custBookings, setCustBookings]=useShared(STOR+'custbk',{},6000);
   // 表示中の店舗（ログイン後に切り替え可能）
   const [viewStore,  setViewStore] =useState(()=>{
     // 初期値：ログイン済みユーザーの店舗を復元
@@ -5849,14 +5854,14 @@ function AppInner() {
   }); // 'honten' | 'sanda'
   const vsId = viewStore||'honten';
   // 店舗別データ（本店）
-  const [schedDataH, setSchedDataH]=useShared(storKey('sched','honten'),{},3000);
+  const [schedDataH, setSchedDataH]=useShared(storKey('sched','honten'),{},6000);
   const [memoDataH,  setMemoDataH] =useShared(storKey('memo', 'honten'),{});
   const [loanerResH, setLoanerResH]=useShared(storKey('lres', 'honten'),{});
   const [closedDaysH,setClosedDaysH]=useShared(storKey('cdow', 'honten'),[],60000);
   const [closedDatesH,setClosedDatesH]=useShared(storKey('cdate','honten'),[],60000);
   const [dayOffDataH, setDayOffDataH] =useShared(storKey('dayoff','honten'),{},60000);
   // 店舗別データ（三田店）
-  const [schedDataS, setSchedDataS]=useShared(storKey('sched','sanda'),{},3000);
+  const [schedDataS, setSchedDataS]=useShared(storKey('sched','sanda'),{},6000);
   const [memoDataS,  setMemoDataS] =useShared(storKey('memo', 'sanda'),{});
   const [loanerResS, setLoanerResS]=useShared(storKey('lres', 'sanda'),{});
   // 三田店：水曜(3)をデフォルト定休 ※-v2でリセット
@@ -5905,7 +5910,7 @@ function AppInner() {
   const dynRentalCars  = (rentalCars &&rentalCars.length >0) ? rentalCars  : DEFAULT_RENTAL_CARS;
   // 表示中の代車リスト（店舗別）
   const currentLoaners = vsId==='honten' ? dynLoanerListH : dynLoanerListS;
-  const [locks,      setLocks]     =useShared(STOR+'locks',{},3000);
+  const [locks,      setLocks]     =useShared(STOR+'locks',{},6000);
   const addRentalRes    = useCallback((carId,rec) => setRentalResData(p=>{const days={...(p[carId]||{})};days[String(rec.id)]={...rec};return{...p,[carId]:days};}),[setRentalResData]);
   const deleteRentalRes = useCallback((carId,resId) => setRentalResData(p=>{const days={...(p[carId]||{})};Object.keys(days).forEach(d=>{if(days[d]?.id===resId)delete days[d];});return{...p,[carId]:days};}),[setRentalResData]);
   const replaceRentalRes = useCallback((carId,resId,newRec) => setRentalResData(p=>{const days={...(p[carId]||{})};Object.keys(days).forEach(d=>{if(days[d]?.id===resId)days[d]={...days[d],...newRec};});return{...p,[carId]:days};}),[setRentalResData]);
@@ -6866,7 +6871,12 @@ function AppInner() {
             const _verify=async(attempt)=>{
               try{
                 const remote=await sGet(STOR+'insp');
-                if(!remote||typeof remote!=='object')return; // 読込失敗時は判定しない
+                if(!remote||typeof remote!=='object'){
+                  // ★読み返し自体の失敗＝未確認。黙って成功扱いにせず再確認、最終的にダメなら知らせる
+                  if(attempt<2){setTimeout(()=>_verify(attempt+1),8000);}
+                  else{alert(`⚠️ ${_vName} の予約保存を確認できませんでした（通信不安定）。\n画面を再読み込みして予約が残っているか確認してください。`);}
+                  return;
+                }
                 const rows=remote[_vDk]||[];
                 const ok=rows.some(r=>r&&(_vCust?r.custId===_vCust:(r.name===_vName&&String(r.no||'')===String(_vNo||''))));
                 if(ok){console.log('[VERIFY insp] ok',_vName,_vDk);return;}
