@@ -6,6 +6,44 @@
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
 <title>Hub a Nice Day</title>
+<script>
+  // ===== 自動アップデート検知（PC版 index と同じ方式・Service Workerなし・HTTPキャッシュのみ） =====
+  // iOSのホーム画面PWAはHTMLを長くキャッシュするため、開いたまま/再訪では旧版が残りがち。
+  // 画面復帰時と定期に自分自身をno-storeで取得し、__APP_BUILDが変わっていれば更新バナーを表示する。
+  // タップ時は cache:'reload' で新HTMLをHTTPキャッシュへ焼き直してから reload するので、確実に新版になる
+  // （アプリを消したりURLを打ち直す必要はない）。本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する。
+  window.__APP_BUILD='build-1783746228283';
+  (function(){
+    var RUNNING=window.__APP_BUILD, shown=false, checking=false;
+    function banner(){
+      if(shown||!document.body)return; shown=true;
+      var b=document.createElement('div');
+      b.textContent='🔄 新しいバージョンがあります（タップして更新）';
+      b.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:2147483647;background:#0e7490;color:#fff;text-align:center;padding:calc(14px + env(safe-area-inset-bottom,0px)) 12px 14px;font-weight:800;font-size:15px;cursor:pointer;box-shadow:0 -2px 12px rgba(0,0,0,.35)';
+      b.onclick=async function(){
+        b.textContent='更新中…';
+        try{await fetch(location.pathname+'?_v='+Date.now(),{cache:'reload'});}catch(e){}
+        location.reload();
+      };
+      document.body.appendChild(b);
+    }
+    async function check(){
+      if(shown||checking||navigator.onLine===false)return; checking=true;
+      try{
+        var res=await fetch(location.pathname+'?_v='+Date.now(),{cache:'no-store'});
+        if(res&&res.ok){
+          var t=await res.text();
+          var m=t.match(/__APP_BUILD='(build-\d+)'/);
+          if(m&&m[1]!==RUNNING)banner();
+        }
+      }catch(e){}
+      checking=false;
+    }
+    document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')check();});
+    setTimeout(check,30000);
+    setInterval(check,15*60*1000);
+  })();
+</script>
 <script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.25.9/babel.min.js"></script>
@@ -25,7 +63,7 @@ input,select,textarea{font-family:inherit;font-size:16px;}
 <script type="text/babel" data-presets="react">
 const {useState,useEffect,useCallback,useMemo,useRef,memo}=React;
 // ★ バージョン管理：システム全体で1つ。変更のたびにindex_dev.htmlのAPP_VERSIONと同値で0.01上げる
-const MOBILE_VERSION='1.40';
+const MOBILE_VERSION='1.45';
 const GAS_URL='https://script.google.com/macros/s/AKfycbxyWvIxIyC1EwJUfm4Fy8g6dpBytp7J9wTuT6Dujz-X7V-WzkGkN-bHw2l6rY_B1ST3/exec';
 const GAS_API_KEY='hub2026SandaHonten!9xKy';
 const STOR='hub-v8-';
@@ -502,11 +540,16 @@ const DayDetailModal=({dk,y,m,d,inspData,schedDataH,schedDataS,memoDataH,memoDat
 const EditModal=({mode,initial,vsId,currentUser,staffList,loanerCars,rentalCars,loanerRes,rentalRes,lockedBy,onSave,onDelete,onClose})=>{
   const isInsp=mode.type==='insp';
   const sc=isInsp?'#3730a3':'#0e7490';
-  const [form,setForm]=useState(()=>({
-    ...(isInsp?blankInsp():{name:'',staff:'',carType:'',work:'',loaner:'',loanerId:null,rentalLabel:'',rentalCarId:null,shimi:'',content:'',deliveryDate:'',deliveryTime:''}),
-    staff:currentUser?.name||'',
-    ...(initial||{}),
-  }));
+  const [form,setForm]=useState(()=>{
+    const base={
+      ...(isInsp?blankInsp():{name:'',staff:'',carType:'',work:'',loaner:'',loanerId:null,rentalLabel:'',rentalCarId:null,shimi:'',content:'',deliveryDate:'',deliveryTime:''}),
+      staff:currentUser?.name||'',
+      ...(initial||{}),
+    };
+    // 新規車検は入庫日デフォルト＝選択日(車検日)。事前入庫のときだけ手動で前の日付に変える。
+    if(isInsp&&mode.isNew&&!base.entryDate)base.entryDate=mode.dk;
+    return base;
+  });
   const [saving,setSaving]=useState(false);
   const [err,setErr]=useState('');
   const dkParts=mode.dk.split('-').map(Number);
@@ -515,14 +558,15 @@ const EditModal=({mode,initial,vsId,currentUser,staffList,loanerCars,rentalCars,
   const [carKind,setCarKind]=useState('keep');
   const [carSel,setCarSel]=useState('');
   const [carFrom,setCarFrom]=useState(form.entryDate?dkToInputDate(form.entryDate):defDate);
-  const [carTo,setCarTo]=useState(defDate);
-  // 事前入庫の手間削減: 貸出日=入庫日 / 返却日=車検作業日 を自動連動。手動で日付を触ったら以降は自動連動を止める。
+  const [carTo,setCarTo]=useState(form.deliveryDate?dkToInputDate(form.deliveryDate):defDate);
+  // 事前入庫/納車の手間削減: 貸出日=入庫日(なければ車検作業日) / 返却日=納車日(なければ車検作業日) を自動連動。
+  // ＝車を預けている全期間（入庫〜納車）が代車の期間になる。手動で日付を触ったら以降は自動連動を止める。
   const manualDatesRef=useRef(false);
   useEffect(()=>{
     if(manualDatesRef.current)return;
     setCarFrom(form.entryDate?dkToInputDate(form.entryDate):defDate);
-    setCarTo(defDate);
-  },[form.entryDate,mode.dk,carKind]);
+    setCarTo(form.deliveryDate?dkToInputDate(form.deliveryDate):defDate);
+  },[form.entryDate,form.deliveryDate,mode.dk,carKind]);
   const bk=isInsp?`insp-${mode.dk}-${mode.idx}`:`sched-${mode.dk}-${mode.slot}`;
   const currentLoanerLbl=getLoanerLabel(loanerRes,mode.dk,initial?.name,initial?.bookingKey||bk,loanerCars);
   const currentBinding=currentLoanerLbl?`🚗 ${currentLoanerLbl}`:(initial?.rentalLabel||initial?.loaner||'');
@@ -631,15 +675,21 @@ const EditModal=({mode,initial,vsId,currentUser,staffList,loanerCars,rentalCars,
                   </div>
                 </div>
               </div>
+              {(()=>{
+                // 入庫日は既定で選択日(車検日=mode.dk)。前の日付に変えると「事前入庫」扱い（＝色/バナー/戻すボタン表示）。
+                const isPre=form.entryDate&&form.entryDate!==mode.dk;
+                return(
               <div>
-                <label style={LBL}>入庫日 <span style={{fontWeight:400,color:'#94a3b8',fontSize:10}}>事前入庫（前日・前々日など）の場合に指定</span></label>
+                <label style={LBL}>入庫日 <span style={{fontWeight:400,color:'#94a3b8',fontSize:10}}>既定は選択日。事前入庫（前日・前々日など）なら前の日付に変更</span></label>
                 <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                  <input type="date" value={dkToInputDate(form.entryDate)} onChange={e=>setForm(p=>({...p,entryDate:inputDateToDk(e.target.value)}))}
-                    style={{...INP,flex:1,...(form.entryDate?{border:'2px solid #9a3412',background:'#fff7ed',color:'#9a3412',fontWeight:800}:{})}}/>
-                  {form.entryDate&&<button onClick={()=>setForm(p=>({...p,entryDate:''}))} style={{padding:'0 14px',background:'#f1f5f9',border:'none',borderRadius:10,fontWeight:800,color:'#64748b',fontSize:16}}>✕</button>}
+                  <input type="date" value={dkToInputDate(form.entryDate||mode.dk)} onChange={e=>setForm(p=>({...p,entryDate:inputDateToDk(e.target.value)||mode.dk}))}
+                    style={{...INP,flex:1,...(isPre?{border:'2px solid #9a3412',background:'#fff7ed',color:'#9a3412',fontWeight:800}:{})}}/>
+                  {isPre&&<button onClick={()=>setForm(p=>({...p,entryDate:mode.dk}))} style={{padding:'0 14px',background:'#f1f5f9',border:'none',borderRadius:10,fontWeight:800,color:'#64748b',fontSize:13}}>当日に戻す</button>}
                 </div>
-                {form.entryDate&&(()=>{const p=form.entryDate.split('-');return <div style={{fontSize:11,color:'#9a3412',marginTop:4,fontWeight:800}}>🚗 事前入庫：{String(p[1]).padStart(2,'0')}/{String(p[2]).padStart(2,'0')} に入庫</div>;})()}
+                {isPre&&(()=>{const p=form.entryDate.split('-');return <div style={{fontSize:11,color:'#9a3412',marginTop:4,fontWeight:800}}>🚗 事前入庫：{String(p[1]).padStart(2,'0')}/{String(p[2]).padStart(2,'0')} に入庫</div>;})()}
               </div>
+                );
+              })()}
               <div>
                 <label style={LBL}>備考</label>
                 <textarea value={form.note||''} onChange={e=>setForm(p=>({...p,note:e.target.value}))} rows={2} style={{...INP,resize:'none'}}/>
@@ -670,22 +720,30 @@ const EditModal=({mode,initial,vsId,currentUser,staffList,loanerCars,rentalCars,
           )}
           {/* 納車日（任意・車検/タイムスケジュール共通）。設定すると納車日のタイムスケジュールに派生表示される（行そのものは保存しない） */}
           <div>
-            <label style={LBL}>納車日 <span style={{fontWeight:400,color:'#94a3b8',fontSize:10}}>任意。決まっていれば入れておくと納車日の表に出ます</span></label>
-            <div style={{display:'flex',gap:8,alignItems:'center'}}>
-              <input type="date" value={dkToInputDate(form.deliveryDate)}
-                onChange={e=>{const v=inputDateToDk(e.target.value);setForm(p=>({...p,deliveryDate:v,deliveryTime:v?(p.deliveryTime||'未定'):''}));}}
-                style={{...INP,flex:1,...(form.deliveryDate?{border:'2px solid #047857',background:'#ecfdf5',color:'#047857',fontWeight:800}:{})}}/>
-              {form.deliveryDate&&<button onClick={()=>setForm(p=>({...p,deliveryDate:'',deliveryTime:''}))} style={{padding:'0 14px',background:'#f1f5f9',border:'none',borderRadius:10,fontWeight:800,color:'#64748b',fontSize:16}}>✕</button>}
-            </div>
-            {form.deliveryDate&&(
-              <div style={{marginTop:8}}>
-                <label style={LBL}>納車時間</label>
-                <select value={form.deliveryTime||'未定'} onChange={e=>setForm(p=>({...p,deliveryTime:e.target.value}))}
-                  style={{...INP,border:'2px solid #047857',color:'#047857',fontWeight:800}}>
-                  {SCHED_SLOTS.map(v=><option key={v} value={v}>{deliverySlotLabel(v)}</option>)}
-                </select>
-                {(()=>{const p=form.deliveryDate.split('-');return <div style={{fontSize:11,color:'#047857',marginTop:4,fontWeight:800}}>🏁 納車：{String(p[1]).padStart(2,'0')}/{String(p[2]).padStart(2,'0')} {deliverySlotLabel(form.deliveryTime||'未定')}</div>;})()}
-              </div>
+            <label style={LBL}>納車日 <span style={{fontWeight:400,color:'#94a3b8',fontSize:10}}>任意。既定は選択日。翌日以降なら日付を変更</span></label>
+            {!form.deliveryDate?(
+              // 未設定→ボタン。押すと選択日(mode.dk＝車検/予定の日)を既定セット。日付入力もその日を起点に開く。
+              <button onClick={()=>setForm(p=>({...p,deliveryDate:mode.dk,deliveryTime:'未定'}))}
+                style={{width:'100%',padding:'11px 12px',borderRadius:10,border:'2px dashed #6ee7b7',background:'#f0fdf9',color:'#047857',fontWeight:800,fontSize:13}}>
+                ＋ 納車日を設定する（選択日から）
+              </button>
+            ):(
+              <React.Fragment>
+                <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                  <input type="date" value={dkToInputDate(form.deliveryDate)}
+                    onChange={e=>{const v=inputDateToDk(e.target.value);setForm(p=>({...p,deliveryDate:v||mode.dk,deliveryTime:p.deliveryTime||'未定'}));}}
+                    style={{...INP,flex:1,border:'2px solid #047857',background:'#ecfdf5',color:'#047857',fontWeight:800}}/>
+                  <button onClick={()=>setForm(p=>({...p,deliveryDate:'',deliveryTime:''}))} style={{padding:'0 14px',background:'#f1f5f9',border:'none',borderRadius:10,fontWeight:800,color:'#64748b',fontSize:16}}>✕</button>
+                </div>
+                <div style={{marginTop:8}}>
+                  <label style={LBL}>納車時間</label>
+                  <select value={form.deliveryTime||'未定'} onChange={e=>setForm(p=>({...p,deliveryTime:e.target.value}))}
+                    style={{...INP,border:'2px solid #047857',color:'#047857',fontWeight:800}}>
+                    {SCHED_SLOTS.map(v=><option key={v} value={v}>{deliverySlotLabel(v)}</option>)}
+                  </select>
+                  {(()=>{const p=form.deliveryDate.split('-');return <div style={{fontSize:11,color:'#047857',marginTop:4,fontWeight:800}}>🏁 納車：{String(p[1]).padStart(2,'0')}/{String(p[2]).padStart(2,'0')} {deliverySlotLabel(form.deliveryTime||'未定')}</div>;})()}
+                </div>
+              </React.Fragment>
             )}
           </div>
           <div style={{border:'2px solid #e0f2fe',borderRadius:12,padding:'10px 12px',background:'#f8fdff'}}>
@@ -702,7 +760,7 @@ const EditModal=({mode,initial,vsId,currentUser,staffList,loanerCars,rentalCars,
             {(carKind==='loaner'||carKind==='rental')&&(
               <div style={{display:'flex',flexDirection:'column',gap:8}}>
                 <div style={{fontSize:10,color:'#0369a1',fontWeight:700,lineHeight:1.4}}>
-                  {form.entryDate?'自動：貸出日＝入庫日 / 返却日＝車検日。必要な時だけ下で変更':'自動：貸出日・返却日＝車検日。必要な時だけ下で変更'}
+                  {`自動：貸出日＝${form.entryDate?'入庫日':'車検日'} / 返却日＝${form.deliveryDate?'納車日':'車検日'}。必要な時だけ下で変更`}
                 </div>
                 <div style={{display:'flex',gap:8}}>
                   <div style={{flex:1}}>
@@ -710,7 +768,7 @@ const EditModal=({mode,initial,vsId,currentUser,staffList,loanerCars,rentalCars,
                     <input type="date" value={carFrom} onChange={e=>{manualDatesRef.current=true;setCarFrom(e.target.value);}} style={{...INP,padding:'8px 10px'}}/>
                   </div>
                   <div style={{flex:1}}>
-                    <label style={LBL}>返却日<span style={{color:'#3730a3',fontWeight:800}}>（車検日）</span></label>
+                    <label style={LBL}>返却日<span style={{color:form.deliveryDate?'#047857':'#3730a3',fontWeight:800}}>（{form.deliveryDate?'納車日':'車検日'}）</span></label>
                     <input type="date" value={carTo} onChange={e=>{manualDatesRef.current=true;setCarTo(e.target.value);}} style={{...INP,padding:'8px 10px'}}/>
                   </div>
                 </div>
@@ -1004,6 +1062,8 @@ const LOANER_SECTION_COLORS={honten:'#1d4ed8',sanda:'#dc2626',rental:'#7c3aed'};
 const LoanerView=({loanerResH,loanerResS,rentalResData,rentalCars,loanerCarsH,loanerCarsS,vsId})=>{
   const today=new Date();
   const [lm,setLm]=useState(new Date(today.getFullYear(),today.getMonth(),1));
+  const [selRes,setSelRes]=useState(null); // タップした予約の詳細ポップアップ {r,car,isRental}
+  const swipeX=useRef(null);
   const ly=lm.getFullYear(),lmo=lm.getMonth();
   const dim=new Date(ly,lmo+1,0).getDate();
   const sc=vsId==='honten'?'#1d4ed8':'#dc2626';
@@ -1042,11 +1102,13 @@ const LoanerView=({loanerResH,loanerResS,rentalResData,rentalCars,loanerCarsH,lo
             const color=r?colors[ci%colors.length]:'white';
             const isTd=ly===today.getFullYear()&&lmo===today.getMonth()&&d===today.getDate();
             const isStart=r&&r.fd===d&&r.fm===lmo;
+            // 貸出日数分のセルを1枠として名前を横に広げる（当月内の帯の長さ。入りきらなければ尻切れ）。
+            const nameSpan=isStart&&r?Math.max(1,(toNumL(r.ty,r.tm,r.td)<=toNumL(ly,lmo,dim)?r.td:dim)-r.fd+1):1;
             return(
-              <div key={d} style={{width:32,minWidth:32,height:36,background:color,borderRight:'1px solid #f1f5f9',borderLeft:isTd?`2px solid ${sc}`:'none',position:'relative',overflow:'hidden'}}>
+              <div key={d} onClick={()=>r&&setSelRes({r,car,isRental:label.includes('レンタカー')})} style={{width:32,minWidth:32,height:36,background:color,borderRight:'1px solid #f1f5f9',borderLeft:isTd?`2px solid ${sc}`:'none',position:'relative',overflow:isStart&&r?'visible':'hidden',cursor:r?'pointer':'default'}}>
                 {isStart&&r&&(
-                  // セル幅は32pxのままなので、行数(2行)で文字数を稼ぐ。法人格を落として固有名だけ出す。
-                  <div style={{position:'absolute',left:1,right:1,top:'50%',transform:'translateY(-50%)',fontSize:8,fontWeight:800,color:'white',textShadow:'0 1px 2px rgba(0,0,0,.85)',lineHeight:1.1,display:'-webkit-box',WebkitBoxOrient:'vertical',WebkitLineClamp:2,overflow:'hidden',wordBreak:'break-all'}}>
+                  // 帯の日数分に広げ、2行まで使う。法人格を落として固有名だけ出す。入りきらなければ尻切れ。
+                  <div style={{position:'absolute',left:1,top:'50%',transform:'translateY(-50%)',width:nameSpan*32-2,fontSize:8,fontWeight:800,color:'white',textShadow:'0 1px 2px rgba(0,0,0,.85)',lineHeight:1.1,display:'-webkit-box',WebkitBoxOrient:'vertical',WebkitLineClamp:2,overflow:'hidden',wordBreak:'break-all',zIndex:3,pointerEvents:'none'}}>
                     {shortenCorpName(r.user)}
                   </div>
                 )}
@@ -1091,9 +1153,40 @@ const LoanerView=({loanerResH,loanerResS,rentalResData,rentalCars,loanerCarsH,lo
         <div style={{padding:'10px 12px 20px',display:'flex',gap:10,flexWrap:'wrap',alignItems:'center',minWidth:`${82+dim*32}px`}}>
           <span style={{display:'flex',alignItems:'center',gap:3,fontSize:10}}><span style={{width:12,height:12,background:'#fca5a5',borderRadius:2,display:'inline-block'}}/>使用中</span>
           <span style={{display:'flex',alignItems:'center',gap:3,fontSize:10}}><span style={{width:12,height:12,background:'white',border:'1px solid #e2e8f0',borderRadius:2,display:'inline-block'}}/>空き</span>
-          <span style={{fontSize:10,color:'#94a3b8'}}>開始日に名前が表示されます</span>
+          <span style={{fontSize:10,color:'#94a3b8'}}>帯をタップで詳細（貸出〜返却）</span>
         </div>
       </div>
+      {selRes&&(()=>{
+        const {r,car,isRental}=selRes;
+        const fmt=(y,m,d)=>`${m+1}/${d}（${DOW[new Date(y,m,d).getDay()]}）`;
+        const days=Math.round((Date.UTC(r.ty,r.tm,r.td)-Date.UTC(r.fy,r.fm,r.fd))/86400000)+1;
+        return(
+          <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:250,display:'flex',flexDirection:'column',justifyContent:'flex-end'}} onClick={()=>setSelRes(null)}>
+            <div onClick={e=>e.stopPropagation()}
+              onTouchStart={e=>{swipeX.current=e.touches[0].clientX;}}
+              onTouchEnd={e=>{if(swipeX.current==null)return;const dx=e.changedTouches[0].clientX-swipeX.current;swipeX.current=null;if(dx>40)setLm(new Date(ly,lmo-1,1));else if(dx<-40)setLm(new Date(ly,lmo+1,1));}}
+              style={{background:'white',borderRadius:'20px 20px 0 0',padding:'16px 18px calc(18px + env(safe-area-inset-bottom,0px))',boxShadow:'0 -8px 40px rgba(0,0,0,.25)',animation:'sheetUp .2s ease'}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
+                <span style={{fontSize:10,fontWeight:800,color:'white',background:isRental?'#7c3aed':sc,borderRadius:20,padding:'2px 10px',whiteSpace:'nowrap'}}>{isRental?'レンタカー':'代車'}</span>
+                <span style={{fontWeight:900,fontSize:16,flex:1,lineHeight:1.3}}>{r.user||'（名前なし）'}</span>
+                <button onClick={()=>setSelRes(null)} style={{width:32,height:32,borderRadius:'50%',background:'#f1f5f9',border:'none',fontSize:16,color:'#64748b',flexShrink:0}}>✕</button>
+              </div>
+              <div style={{display:'flex',flexDirection:'column',gap:8,fontSize:13}}>
+                <div style={{display:'flex',gap:8}}><span style={{color:'#94a3b8',width:52,flexShrink:0}}>車両</span><span style={{fontWeight:700}}>{car?.name}{car?.num?` (${car.num})`:''}</span></div>
+                <div style={{display:'flex',gap:8}}><span style={{color:'#94a3b8',width:52,flexShrink:0}}>貸出</span><span style={{fontWeight:800,color:'#0369a1'}}>{fmt(r.fy,r.fm,r.fd)}</span></div>
+                <div style={{display:'flex',gap:8}}><span style={{color:'#94a3b8',width:52,flexShrink:0}}>返却</span><span style={{fontWeight:800,color:'#047857'}}>{fmt(r.ty,r.tm,r.td)}</span></div>
+                <div style={{display:'flex',gap:8}}><span style={{color:'#94a3b8',width:52,flexShrink:0}}>期間</span><span style={{fontWeight:700}}>{days}日間{(r.fm!==r.tm||r.fy!==r.ty)&&<span style={{marginLeft:6,fontSize:11,color:'#c2410c',fontWeight:800}}>月をまたぐ貸出</span>}</span></div>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:8,marginTop:16}}>
+                <button onClick={()=>setLm(new Date(ly,lmo-1,1))} style={{flex:1,padding:'10px 0',borderRadius:10,border:'2px solid #e5e7eb',background:'white',fontWeight:800,fontSize:12,color:'#374151'}}>‹ 前の月</button>
+                <span style={{fontWeight:900,fontSize:13,minWidth:78,textAlign:'center'}}>{ly}年{lmo+1}月</span>
+                <button onClick={()=>setLm(new Date(ly,lmo+1,1))} style={{flex:1,padding:'10px 0',borderRadius:10,border:'2px solid #e5e7eb',background:'white',fontWeight:800,fontSize:12,color:'#374151'}}>次の月 ›</button>
+              </div>
+              <div style={{textAlign:'center',fontSize:10,color:'#94a3b8',marginTop:6}}>← 横スワイプでも月移動（前月の帯が確認できます）</div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
@@ -1373,10 +1466,12 @@ const App=()=>{
   const releaseLock=async()=>releaseLockHandle(detachLock());
   useEffect(()=>()=>{if(lockHeartbeatRef.current)clearInterval(lockHeartbeatRef.current);},[]);
 
-  const openEdit=useCallback(async(req)=>{
+  const openEdit=useCallback((req)=>{
     // req: {type:'insp'|'sched', dk, idx?, slot?, isNew}
+    // initial はローカルデータから即座に作れる（GAS不要）ので、まずモーダルを開く。
+    // ロック取得（GAS往復）はタップ→表示の体感を悪くするため、開いた後に裏で取得して
+    // 他人が編集中なら lockedBy を後付けで反映する（＝タップ即モーダル表示）。
     const key=req.type==='insp'?lockKeyOf('insp',req.dk,req.idx):lockKeyOf('sched',req.dk,null,req.slot);
-    const lockedBy=await acquireLock(key,user?.name||'モバイル');
     let initial;
     if(req.type==='insp'){
       initial=req.isNew?{}:{...((inspData[req.dk]||[])[req.idx]||{})};
@@ -1384,7 +1479,10 @@ const App=()=>{
       const sd=vsId==='honten'?schedDataH:schedDataS;
       initial=req.isNew?{}:{...((sd[req.dk]||{})[req.slot]||{})};
     }
-    setEditMode({...req,initial,lockedBy});
+    setEditMode({...req,initial,lockedBy:null});
+    acquireLock(key,user?.name||'モバイル').then(lockedBy=>{
+      if(lockedBy)setEditMode(m=>(m&&m.type===req.type&&m.dk===req.dk&&m.idx===req.idx&&m.slot===req.slot)?{...m,lockedBy}:m);
+    }).catch(()=>{});
   },[user,inspData,schedDataH,schedDataS,vsId]);
 
   const closeEdit=useCallback(()=>{
