@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- fixed-holiday-1778028748861 force-deploy-1784074774224 -->
+<!-- fixed-holiday-1778028748861 force-deploy-1784075964333 -->
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
@@ -17,7 +17,7 @@
     // 開きっぱなしのタブが旧コードのまま動き続けるのを防ぐ。画面復帰時と定期に自分自身を
     // no-store+クエリ付きで取得し、__APP_BUILD が変わっていれば「更新」バナーを表示する。
     // 本番デプロイ時は port_to_main.js が __APP_BUILD を自動更新する（手動更新不要）。
-    window.__APP_BUILD='build-1784074774224';
+    window.__APP_BUILD='build-1784075964333';
     (function(){
       var RUNNING=window.__APP_BUILD, shown=false, checking=false;
       function banner(){
@@ -8703,6 +8703,21 @@ function AppInner() {
                       </span>
                     </div>
                   )}
+                  {/* 本日に戻るボタン。備考バッジ（左25%）と対称の右75%に置いてバランスを取る。
+                      表示中の日付が今日でない時だけ出す */}
+                  {(()=>{
+                    const _t=new Date();
+                    const isToday=_selDate&&_selDate.getFullYear()===_t.getFullYear()&&_selDate.getMonth()===_t.getMonth()&&_selDate.getDate()===_t.getDate();
+                    if(isToday)return null;
+                    return(
+                      <div style={{position:'absolute',left:'75%',transform:'translateX(-50%)',display:'flex',alignItems:'center'}}>
+                        <button onClick={()=>setSelDate(new Date())} title="表示中の日付にかかわらず今日へ一気に戻る"
+                          style={{display:'flex',alignItems:'center',gap:5,padding:'4px 13px',background:'#86efac',border:'2px solid #4ade80',borderRadius:7,fontSize:12,fontWeight:800,color:'white',textShadow:'0 1px 2px rgba(21,128,61,0.55)',whiteSpace:'nowrap',boxShadow:'0 2px 6px rgba(74,222,128,0.35)',cursor:'pointer',userSelect:'none'}}>
+                          ⏱ 本日に戻る
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
                 {/* 2行目：スタッフバー（固定） */}
                 {(()=>{
